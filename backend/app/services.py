@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
-from .models import GTHistory, ImageRecord, Pair, now
+from .models import GTHistory, ImageCleanup, ImageRecord, Pair, now
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -100,16 +100,26 @@ def import_directory(db, project, root: Path):
     return counts
 
 
-def image_dict(image):
+def active_cleanup(db, image_id):
+    return db.scalar(select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True)))
+
+
+def image_dict(db, image):
     if image is None:
         return None
-    return {key: getattr(image, key) for key in ["id", "file_name", "file_path", "role", "file_hash", "width", "height", "mode", "error"]}
+    result = {key: getattr(image, key) for key in ["id", "file_name", "file_path", "role", "file_hash", "width", "height", "mode", "error"]}
+    clean = active_cleanup(db, image.id)
+    result["cleanup"] = None if clean is None else {
+        **{key: getattr(clean, key) for key in ["id", "source_hash", "clean_path", "clean_hash", "mask_path", "mask_hash", "config", "created_at"]},
+        "stale": clean.source_hash != image.file_hash,
+    }
+    return result
 
 
 def pair_dict(db, pair):
     result = {key: getattr(pair, key) for key in ["id", "project_id", "folder", "gt_x", "gt_y", "gt_source", "group_key", "tier", "notes", "enabled", "exclude_reason", "import_issues", "revision", "updated_at"]}
-    result["reference"] = image_dict(db.get(ImageRecord, pair.reference_image_id)) if pair.reference_image_id else None
-    result["query"] = image_dict(db.get(ImageRecord, pair.query_image_id)) if pair.query_image_id else None
+    result["reference"] = image_dict(db, db.get(ImageRecord, pair.reference_image_id)) if pair.reference_image_id else None
+    result["query"] = image_dict(db, db.get(ImageRecord, pair.query_image_id)) if pair.query_image_id else None
     return result
 
 
@@ -139,6 +149,17 @@ def audit_dataset(db, project_id):
                 add(pair, "BROKEN_FILE", f"{role}: 파일이 없거나 읽을 수 없습니다.")
             elif image.file_hash != current["file_hash"]:
                 add(pair, "FILE_CHANGED", f"{role}: 등록 후 파일이 바뀌었습니다. 폴더를 재검색하세요.")
+            clean = active_cleanup(db, image.id)
+            if clean:
+                if clean.source_hash != current["file_hash"]:
+                    add(pair, "STALE_CLEAN", f"{role}: 원본이 변경되어 표시 제거를 다시 실행하거나 원본 사용으로 되돌려야 합니다.")
+                for field in ["clean", "mask"]:
+                    try:
+                        valid = digest(Path(getattr(clean, f"{field}_path"))) == getattr(clean, f"{field}_hash")
+                    except OSError:
+                        valid = False
+                    if not valid:
+                        add(pair, "BROKEN_CLEAN", f"{role}: {field} 캐시가 없거나 변경되었습니다. 표시 제거를 다시 실행하세요.")
             if pair.enabled and current["file_hash"]:
                 hashes[current["file_hash"]].append({"pair_id": pair.id, "folder": pair.folder, "role": role, "group_key": pair.group_key})
         query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None

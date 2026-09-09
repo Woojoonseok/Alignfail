@@ -21,6 +21,7 @@ import {
   Circle,
   Crosshair,
   Database,
+  Eraser,
   FileJson,
   Files,
   FolderInput,
@@ -51,6 +52,7 @@ import {
   dateLabel,
   draftOf,
   imageUrl,
+  cleanImageUrl,
   versionName,
   type Audit,
   type History,
@@ -60,6 +62,7 @@ import {
   type Project,
   type Version,
 } from "./api";
+import ImageCleaner from "./ImageCleaner";
 
 type Notify = (message: string) => void;
 type PageProps = {
@@ -1096,6 +1099,7 @@ function ImageViewer({
   zoom,
   setZoom,
   showGT,
+  onClean,
 }: {
   image: ImageRecord | null;
   title: string;
@@ -1104,10 +1108,18 @@ function ImageViewer({
   zoom: number;
   setZoom: (n: number) => void;
   showGT: boolean;
+  onClean?: () => void;
 }) {
   const [failed, setFailed] = useState(false);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [cleanView, setCleanView] = useState(
+    !!image?.cleanup && !image.cleanup.stale,
+  );
+  useEffect(() => {
+    setFailed(false);
+    setLoaded(false);
+  }, [cleanView]);
   const markerSize = image?.width ? Math.max(5, image.width / 65 / zoom) : 6;
   return (
     <section className="viewer">
@@ -1119,6 +1131,25 @@ function ImageViewer({
           {onPick ? "정답 위치 지정" : "기준 이미지"}
         </span>
         <span>{image?.width && `${image.width} × ${image.height}`}</span>
+      </div>
+      <div className="viewer-clean-controls">
+        <button
+          disabled={!onClean || !image || !!image.error}
+          onClick={onClean}
+          aria-label={`${title} 흰 표시 제거`}
+        >
+          <Eraser size={13} /> 흰 표시 제거
+        </button>
+        {image?.cleanup && !image.cleanup.stale && (
+          <button
+            className={`clean-toggle ${cleanView ? "active" : ""}`}
+            onClick={() => setCleanView((v) => !v)}
+            aria-label={`${title} 원본 Clean 전환`}
+          >
+            {cleanView ? "Clean · 원본 보기" : "원본 · Clean 보기"}
+          </button>
+        )}
+        {image?.cleanup?.stale && <span>제거 결과 재생성 필요</span>}
       </div>
       <div className="image-viewport">
         {!image || image.error || failed ? (
@@ -1135,7 +1166,11 @@ function ImageViewer({
         ) : (
           <div className="image-stage" style={{ width: `${zoom * 100}%` }}>
             <img
-              src={imageUrl(image)}
+              src={
+                cleanView && image.cleanup
+                  ? cleanImageUrl(image)
+                  : imageUrl(image)
+              }
               alt={`${title}: ${image.file_name}`}
               draggable={false}
               onLoad={() => setLoaded(true)}
@@ -1287,6 +1322,7 @@ function PairEditor({
   const [queryZoom, setQueryZoom] = useState(1);
   const [showGT, setShowGT] = useState(true);
   const [tab, setTab] = useState("metadata");
+  const [cleaningImage, setCleaningImage] = useState<ImageRecord | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(pair));
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   const history = useQuery({
@@ -1306,6 +1342,19 @@ function PairEditor({
     setDraft((d) => ({ ...d, [key]: value }));
   return (
     <>
+      {cleaningImage && (
+        <ImageCleaner
+          image={cleaningImage}
+          close={() => setCleaningImage(null)}
+          saved={async () => {
+            setCleaningImage(null);
+            await refresh();
+            notify(
+              "이미지 표시 제거 설정을 저장했습니다. 원본과 GT는 유지됩니다.",
+            );
+          }}
+        />
+      )}
       <div className="pair-detail-heading">
         <div>
           <h2>{pair.folder}</h2>
@@ -1360,6 +1409,11 @@ function PairEditor({
           zoom={refZoom}
           setZoom={setRefZoom}
           showGT={false}
+          onClean={
+            !dirty && !save.isPending && pair.reference
+              ? () => setCleaningImage(pair.reference)
+              : undefined
+          }
         />
         <ImageViewer
           image={pair.query}
@@ -1371,6 +1425,11 @@ function PairEditor({
           zoom={queryZoom}
           setZoom={setQueryZoom}
           showGT={showGT}
+          onClean={
+            !dirty && !save.isPending && pair.query
+              ? () => setCleaningImage(pair.query)
+              : undefined
+          }
         />
       </div>
       <form

@@ -44,3 +44,28 @@ class PairInput(StrictModel):
 
 class VersionInput(StrictModel):
     description: str = Field(min_length=1, max_length=4000)
+
+
+class PixelRect(StrictModel):
+    x0: int = Field(ge=0)
+    y0: int = Field(ge=0)
+    x1: int = Field(ge=0)
+    y1: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.x0 > self.x1 or self.y0 > self.y1:
+            raise ValueError("시작 좌표는 끝 좌표보다 작거나 같아야 합니다.")
+        return self
+
+
+class CleanupSource(StrictModel):
+    source_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class CleanupInput(CleanupSource):
+    box: PixelRect | None = None
+    cross: PixelRect | None = None
+    padding: int = Field(default=1, ge=0, le=5)
+    radius: float = Field(default=3, ge=1, le=10)
+    cross_noise: bool = True

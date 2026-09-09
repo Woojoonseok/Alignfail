@@ -80,3 +80,17 @@ class DatasetVersion(Base):
     description: Mapped[str] = mapped_column(Text)
     manifest: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[str] = mapped_column(String(40), default=now)
+
+
+class ImageCleanup(Base):
+    __tablename__ = "image_cleanups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    image_id: Mapped[str] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), index=True)
+    source_hash: Mapped[str] = mapped_column(String(64))
+    config: Mapped[dict] = mapped_column(JSON)
+    clean_path: Mapped[str] = mapped_column(Text)
+    clean_hash: Mapped[str] = mapped_column(String(64))
+    mask_path: Mapped[str] = mapped_column(Text)
+    mask_hash: Mapped[str] = mapped_column(String(64))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[str] = mapped_column(String(40), default=now)

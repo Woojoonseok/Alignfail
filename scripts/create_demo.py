@@ -37,6 +37,7 @@ def board(width, height, x, y, seed, query=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("sample-data/Dada"))
+    parser.add_argument("--markings", action="store_true", help="Draw white boxes/crosses for cleanup verification")
     args = parser.parse_args()
     root = args.output.resolve()
     if root.exists():
@@ -44,9 +45,16 @@ def main():
     for i in range(1, 9):
         folder = root / f"demo_pair_{i:03d}"
         folder.mkdir(parents=True)
-        board(512, 512, 256, 241, i).save(folder / f"sample_{i:03d}_REF.png")
+        reference = board(512, 512, 256, 241, i)
         x, y = 155 + (i * 37) % 190, 155 + (i * 53) % 190
-        board(512, 512, x, y, i, True).save(folder / f"sample_{i:03d}.png")
+        query = board(512, 512, x, y, i, True)
+        if args.markings:
+            ImageDraw.Draw(reference).rectangle((156, 141, 356, 341), outline=(255, 255, 255), width=1)
+            draw = ImageDraw.Draw(query)
+            draw.line((0, y, 511, y), fill=(255, 255, 255), width=1)
+            draw.line((x, 0, x, 511), fill=(255, 255, 255), width=1)
+        reference.save(folder / f"sample_{i:03d}_REF.png")
+        query.save(folder / f"sample_{i:03d}.png")
     print(f"Created 8 synthetic pairs: {root}")
     print("These images verify the tool only; they do not measure model accuracy.")
 

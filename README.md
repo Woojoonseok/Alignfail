@@ -10,6 +10,7 @@
 - PNG, JPEG, BMP, TIFF, WebP. 하위 Pair 폴더 바로 아래의 파일만 검색하며 심볼릭 링크는 제외합니다.
 - Pair 검색·상태 필터, REF/Query 나란히 보기, 독립 확대와 스크롤, 클릭 GT·숫자 좌표 편집.
 - GT 수정 이력, 데이터 그룹·Tier·메모·제외 사유.
+- 흰 네모·십자선 자동 후보 검출/직접 지정, 제거 미리보기, Clean PNG·제거 마스크 저장, 원본/Clean 전환.
 - 파일 누락·손상·변경·동일 SHA256, 잘못된 Pair, GT 누락·범위 검사.
 - 데이터 버전(immutable manifest), 버전 비교, GT JSON 및 Manifest 다운로드.
 - 단계별 데이터 준비 안내와 진행 화면. 학습 기능을 실행하는 가짜 버튼이나 가짜 학습 결과는 없습니다.
@@ -41,7 +42,7 @@ Windows 브라우저에서 **http://localhost:8000** 에 접속합니다. 기본
 
 소스 코드, `frontend/package-lock.json`, 실행 스크립트와 이 문서를 전달하세요. **Windows에서 만든 `.venv`나 `node_modules`는 WSL로 복사하지 않습니다.** WSL에서 새로 설치합니다.
 
-`python scripts/package_release.py`는 소스와 빌드된 UI를 `artifacts/alignfail-dataset-studio-v0.1.0.zip`으로 묶습니다. 원본 이미지, 합성 이미지, 프로젝트 DB와 로컬 Python/Node 환경은 포함하지 않습니다. Python 의존성은 직접 버전과 `backend/constraints.txt`의 간접 버전을 함께 고정합니다.
+`python scripts/package_release.py`는 소스와 빌드된 UI를 `artifacts/alignfail-dataset-studio-v0.1.1.zip`으로 묶습니다. 원본 이미지, 합성 이미지, 프로젝트 DB와 로컬 Python/Node 환경은 포함하지 않습니다. Python 의존성은 직접 버전과 `backend/constraints.txt`의 간접 버전을 함께 고정합니다.
 
 `frontend/dist`는 여기서 빌드한 결과를 전달해도 됩니다. 빌드 결과를 전달한 경우 회사에서는 Node.js 없이 Python 의존성 설치와 `start-wsl.sh` 실행만으로 운영할 수 있습니다.
 
@@ -87,6 +88,26 @@ python scripts/create_demo.py
 `sample-data/Dada`에 원본/Query 합성 이미지 8 Pair를 생성합니다. 기존 출력 폴더가 있으면 덮어쓰지 않고 중단합니다. UI에서 이 폴더를 **테스트 프로젝트**로 등록하세요. 합성 데이터는 기능 검증용이며 실제 localization 성능의 근거가 아닙니다.
 
 ## 좌표 · 데이터 보존 규칙
+
+### 흰 네모 · 십자선 제거 (v0.1.1)
+
+기존 설치를 업데이트할 때는 서버를 종료하고 코드를 받은 뒤 `python -m pip install -r backend/requirements.txt`, `npm --prefix frontend ci`, `npm --prefix frontend run build`를 실행하고 서버를 다시 시작하세요. 기존 DB에는 제거 이력 테이블이 자동 추가됩니다.
+
+1. Pair Explorer의 각 이미지에서 **흰 표시 제거**를 누릅니다. 미저장 GT 변경이 있으면 먼저 저장하거나 되돌리세요.
+2. **네모 자동 찾기 / 십자선 자동 찾기**로 후보를 찾습니다. 실패하면 **네모 직접 지정**으로 두 모서리, **십자선 직접 지정**으로 교차점을 클릭합니다. 좌표는 숫자로 보정할 수 있습니다.
+3. 붉은 제거 영역과 여유 폭을 확인한 뒤 **제거 미리보기**로 전후를 비교합니다.
+4. **Clean 이미지 저장**을 누르면 별도 PNG와 마스크를 `.studio/clean`에 저장합니다. Pair Viewer에서는 Clean 이미지를 기본으로 표시하며 원본으로 전환할 수 있습니다.
+5. **원본 사용으로 되돌리기**는 Clean 선택만 해제합니다. 기존 버전이 참조하는 과거 캐시는 유지됩니다.
+
+현재 제거는 **8-bit grayscale/RGB의 축과 평행한 네모 테두리 및 이미지 전체를 가로지르는 십자선 띠**를 지원합니다. 작은 국소 십자선이나 회전된 도형용 자유 마스크는 지원하지 않습니다. 네모는 밝기 250 이상 투영으로 위치를 찾고 ridge coverage 0.8 이상 후보를 제시합니다. 마스크는 밝기와 무관하게 테두리 전체를 포함합니다. 십자선은 행·열 모두 밝기 비율 0.30 이상과 양방향 지지를 요구해 가로 스케일바와 네모 모서리를 배제합니다. 자동 후보는 실제 이미지에서 직접 확인해야 합니다.
+
+선 영역은 OpenCV TELEA(radius 기본 3)로 채웁니다. 십자선에는 옵션으로 주변 고주파 질감의 표준편차에 맞춘 노이즈를 더합니다. 이 구현은 과거 Phase 2의 선형보간 코드를 복제한 것이 아닙니다. 원본 hash·설정 기반 seed, 알고리즘·라이브러리 버전, Clean/mask hash를 기록합니다. 같은 환경과 설정에서 결과가 재현되며 마스크 밖의 픽셀은 유지합니다. 픽셀 복원은 추정이므로 가려지기 전 구조를 정확히 복구하거나 학습 누출을 제거했다고 보장하지 않습니다. 제공된 회사 데이터의 누출 검사는 아직 연결하지 않았습니다.
+
+GT 좌표는 자동으로 생성·변경하지 않습니다. 원본이 변경되거나 Clean/mask 캐시가 손상되면 Audit에서 오류로 처리합니다. 기존 데이터 버전은 생성 당시의 Clean 경로와 설정을 보존합니다. `.studio` 백업에는 이 캐시도 포함해야 합니다.
+
+흰 표시가 있는 합성 이미지는 `python scripts/create_demo.py --output sample-data/MarkedDada --markings`로 생성할 수 있습니다.
+
+### 좌표와 보존
 
 - GT는 **원본 이미지 픽셀 좌표**입니다. 좌상단 `(0, 0)`, X는 오른쪽, Y는 아래쪽. `0 ≤ x < width`, `0 ≤ y < height`.
 - 마우스로 지정할 때 가장 가까운 정수로 기록하며 숫자 입력으로 소수 좌표도 저장할 수 있습니다. 확대율과 무관합니다.

@@ -14,7 +14,7 @@ def main():
         paths.extend(p for p in (ROOT / directory).rglob("*")
                      if p.is_file() and not EXCLUDED.intersection(p.relative_to(ROOT).parts)
                      and p.suffix not in {".pyc", ".tsbuildinfo"})
-    destination = ROOT / "artifacts/alignfail-dataset-studio-v0.1.0.zip"
+    destination = ROOT / "artifacts/alignfail-dataset-studio-v0.1.1.zip"
     destination.parent.mkdir(exist_ok=True)
     with ZipFile(destination, "w", ZIP_DEFLATED) as bundle:
         for path in sorted(paths):

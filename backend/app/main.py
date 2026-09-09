@@ -17,18 +17,20 @@ from .database import create_database
 from .models import DatasetVersion, GTHistory, ImageRecord, Pair, Project, now
 from .schemas import ImportInput, PairInput, ProjectInput, VersionInput
 from .services import audit_dataset, digest, gt_value, import_directory, pair_dict
+from .cleanup_api import register_cleanup_routes
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_app(state_dir: Path | None = None):
-    app = FastAPI(title="AlignFail Dataset Studio", version="0.1.0")
+    app = FastAPI(title="AlignFail Dataset Studio", version="0.1.1")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     app.state.state_dir = state_dir or Path(os.getenv("ALIGNFAIL_STATE_DIR", str(ROOT / ".studio")))
     engine, factory = create_database(app.state.state_dir)
     app.state.engine = engine
     # This local, single-worker application serializes edits/imports to avoid stale GT writes.
     write_lock = threading.RLock()
+    register_cleanup_routes(app, factory, write_lock)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_input(_request, exc):
@@ -73,7 +75,7 @@ def create_app(state_dir: Path | None = None):
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.1.0", "phase": "dataset-studio"}
+        return {"status": "ok", "version": "0.1.1", "phase": "dataset-studio"}
 
     @app.get("/api/projects")
     def list_projects(db: Session = Depends(session)):

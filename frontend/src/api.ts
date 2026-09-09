@@ -20,6 +20,28 @@ export interface ImageRecord {
   height: number | null;
   mode: string | null;
   error: string | null;
+  cleanup?: Cleanup | null;
+}
+export interface PixelRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+export interface CleanupConfig {
+  source_hash: string;
+  box: PixelRect | null;
+  cross: PixelRect | null;
+  padding: number;
+  radius: number;
+  cross_noise: boolean;
+}
+export interface Cleanup {
+  id: string;
+  source_hash: string;
+  clean_hash: string;
+  stale: boolean;
+  config: { parameters: CleanupConfig };
 }
 export interface Pair {
   id: string;
@@ -123,6 +145,8 @@ export async function api<T>(
 }
 export const imageUrl = (image: ImageRecord, thumbnail = false) =>
   `/api/images/${image.id}?${thumbnail ? "size=160&" : ""}v=${image.file_hash ?? ""}`;
+export const cleanImageUrl = (image: ImageRecord) =>
+  `/api/cleanups/${image.cleanup!.id}/image`;
 export const versionName = (n: number) => `v${String(n).padStart(3, "0")}`;
 export const dateLabel = (date: string) =>
   new Date(date).toLocaleString("ko-KR", {
