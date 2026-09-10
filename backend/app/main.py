@@ -18,12 +18,13 @@ from .models import DatasetVersion, GTHistory, ImageRecord, Pair, Project, now
 from .schemas import ImportInput, PairInput, ProjectInput, VersionInput
 from .services import audit_dataset, digest, gt_value, import_directory, pair_dict
 from .cleanup_api import register_cleanup_routes
+from .grouping import register_group_routes
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_app(state_dir: Path | None = None):
-    app = FastAPI(title="AlignFail Dataset Studio", version="0.1.1")
+    app = FastAPI(title="AlignFail Dataset Studio", version="0.1.2")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     app.state.state_dir = state_dir or Path(os.getenv("ALIGNFAIL_STATE_DIR", str(ROOT / ".studio")))
     engine, factory = create_database(app.state.state_dir)
@@ -31,6 +32,7 @@ def create_app(state_dir: Path | None = None):
     # This local, single-worker application serializes edits/imports to avoid stale GT writes.
     write_lock = threading.RLock()
     register_cleanup_routes(app, factory, write_lock)
+    register_group_routes(app, factory, write_lock)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_input(_request, exc):
@@ -75,7 +77,7 @@ def create_app(state_dir: Path | None = None):
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.1.1", "phase": "dataset-studio"}
+        return {"status": "ok", "version": "0.1.2", "phase": "dataset-studio"}
 
     @app.get("/api/projects")
     def list_projects(db: Session = Depends(session)):
@@ -255,7 +257,7 @@ def create_app(state_dir: Path | None = None):
             elif key not in new:
                 changes.append({"folder": old[key]["folder"], "fields": ["삭제"]})
             else:
-                fields = [f for f in ["gt_x", "gt_y", "gt_source", "group_key", "tier", "enabled", "exclude_reason", "notes", "reference", "query", "import_issues"] if old[key][f] != new[key][f]]
+                fields = [f for f in ["gt_x", "gt_y", "gt_source", "group_key", "class_label", "tier", "enabled", "exclude_reason", "notes", "reference", "query", "import_issues"] if old[key].get(f, "") != new[key].get(f, "")]
                 if fields:
                     changes.append({"folder": new[key]["folder"], "fields": fields})
         return {"base": base.number, "target": target.number, "changes": changes}

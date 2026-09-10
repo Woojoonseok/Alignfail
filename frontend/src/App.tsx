@@ -63,6 +63,7 @@ import {
   type Version,
 } from "./api";
 import ImageCleaner from "./ImageCleaner";
+import BatchTools from "./BatchTools";
 
 type Notify = (message: string) => void;
 type PageProps = {
@@ -946,6 +947,7 @@ function Overview({
 }
 
 function PairExplorer({
+  project,
   pairs,
   refresh,
   notify,
@@ -956,9 +958,11 @@ function PairExplorer({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [dirty, setDirty] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
   const filtered = pairs.filter(
     (p) =>
-      `${p.folder} ${p.group_key} ${p.tier}`
+      `${p.folder} ${p.group_key} ${p.class_label} ${p.tier}`
         .toLowerCase()
         .includes(search.toLowerCase()) &&
       (filter === "all" ||
@@ -975,8 +979,8 @@ function PairExplorer({
     setParams({ pair: pair.id });
   }
   useEffect(() => {
-    reportDirty(dirty);
-  }, [dirty, reportDirty]);
+    reportDirty(dirty || batchBusy);
+  }, [dirty, batchBusy, reportDirty]);
   useEffect(() => () => reportDirty(false), [reportDirty]);
   const index = selected ? filtered.findIndex((p) => p.id === selected.id) : -1;
   useEffect(() => {
@@ -999,6 +1003,7 @@ function PairExplorer({
     );
   return (
     <div className="explorer-layout">
+      {batchOpen && <BatchTools projectId={project.id} pairs={pairs} refresh={refresh} close={() => setBatchOpen(false)} onBusy={setBatchBusy} />}
       <aside className="pair-list panel">
         <div className="pair-list-header">
           <strong>
@@ -1006,6 +1011,7 @@ function PairExplorer({
           </strong>
           <SlidersHorizontal size={16} />
         </div>
+        <button className="button secondary batch-open" disabled={dirty} onClick={() => setBatchOpen(true)}>일괄 제거 · 그룹화</button>
         <div className="search-input">
           <Search size={15} />
           <input
@@ -1515,6 +1521,7 @@ function PairEditor({
             </div>
             {tab === "metadata" ? (
               <div className="metadata-body">
+                <label>클래스<input value={draft.class_label} onChange={(e) => field("class_label", e.target.value)} maxLength={200} placeholder="예: connector / pad" /></label>
                 <div className="metadata-row">
                   <label>
                     데이터 그룹

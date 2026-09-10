@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
@@ -20,4 +20,7 @@ def create_database(state_dir: Path):
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA busy_timeout=10000")
     Base.metadata.create_all(engine)
+    if "class_label" not in {c["name"] for c in inspect(engine).get_columns("pairs")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE pairs ADD COLUMN class_label VARCHAR(200) NOT NULL DEFAULT ''"))
     return engine, sessionmaker(engine, expire_on_commit=False)

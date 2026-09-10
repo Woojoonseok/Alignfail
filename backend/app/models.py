@@ -52,6 +52,7 @@ class Pair(Base):
     gt_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     gt_source: Mapped[str] = mapped_column(String(30), default="none")
     group_key: Mapped[str] = mapped_column(String(200), default="")
+    class_label: Mapped[str] = mapped_column(String(200), default="")
     tier: Mapped[str] = mapped_column(String(50), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -1,0 +1,210 @@
+.batch-open {
+  margin: 0 12px 12px;
+}
+.modal.batch-modal {
+  width: 1180px;
+  max-width: calc(100vw - 32px);
+}
+.batch-modal .modal-title p {
+  font-size: 12px;
+  margin-top: 8px;
+  color: #718579;
+}
+.batch-body {
+  padding: 20px 24px;
+}
+.batch-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.batch-filters,
+.batch-controls,
+.batch-selection,
+.batch-pagination,
+.batch-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.batch-filters input,
+.batch-filters select,
+.batch-controls input,
+.batch-controls select {
+  width: auto;
+  max-width: 260px;
+}
+.batch-filters select {
+  max-width: 200px;
+}
+.modal.batch-modal label {
+  margin-bottom: 0;
+}
+.batch-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.batch-check input,
+.batch-card input {
+  width: 14px;
+  height: 14px;
+  accent-color: #20876b;
+}
+.batch-selection {
+  margin: 14px 0;
+  font-size: 12px;
+}
+.batch-selection span {
+  color: #789183;
+}
+.batch-tabs {
+  display: flex;
+  gap: 16px;
+  border-bottom: 1px solid #dce6df;
+}
+.batch-tabs button {
+  background: none;
+  border: 0;
+  padding: 12px 5px;
+  color: #789183;
+}
+.batch-tabs button.active {
+  color: #167e64;
+  border-bottom: 2px solid #167e64;
+}
+.batch-settings {
+  padding: 16px;
+  background: #f6f9f7;
+  border-radius: 8px;
+  margin: 14px 0;
+}
+.batch-settings p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #718579;
+  margin-bottom: 12px;
+}
+.batch-controls > label:not(.batch-check) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.batch-controls input[type="number"] {
+  width: 70px;
+}
+.batch-progress,
+.batch-message,
+.batch-results {
+  margin: 14px 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.batch-message {
+  color: #15795c;
+}
+.batch-results {
+  max-height: 220px;
+  overflow: auto;
+  background: #f5f8f6;
+  padding: 12px;
+}
+.batch-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.batch-card {
+  border: 1px solid #dfe8e1;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.batch-card.selected {
+  border-color: #248a6f;
+  background: #edf8f1;
+}
+.batch-card > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.batch-card > div {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0;
+}
+.batch-card img {
+  width: calc(50% - 2px);
+  height: 95px;
+  object-fit: contain;
+  background: #26332f;
+}
+.batch-card small {
+  display: block;
+  font-size: 10px;
+  color: #708578;
+  overflow-wrap: anywhere;
+}
+.batch-pagination {
+  justify-content: center;
+  margin-top: 16px;
+  font-size: 12px;
+}
+.cluster-proposals {
+  margin-top: 16px;
+}
+.cluster-proposals > section {
+  border: 1px solid #dce5df;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 10px 0;
+  background: white;
+}
+.cluster-proposals label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.cluster-proposals input {
+  max-width: 350px;
+}
+.cluster-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 300px;
+  overflow: auto;
+  margin-top: 12px;
+}
+.cluster-thumbs figure {
+  width: 86px;
+  margin: 0;
+}
+.cluster-thumbs img {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  background: #26332f;
+}
+.cluster-thumbs figcaption {
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.cluster-thumbs select { width:86px; padding:4px; margin-top:5px; font-size:10px; }
+@media (max-width: 800px) {
+  .batch-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .batch-body {
+    padding: 14px;
+  }
+}

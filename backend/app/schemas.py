@@ -26,6 +26,7 @@ class PairInput(StrictModel):
     gt_x: float | None = None
     gt_y: float | None = None
     group_key: str = Field(default="", max_length=200)
+    class_label: str = Field(default="", max_length=200)
     tier: str = Field(default="", max_length=50)
     notes: str = Field(default="", max_length=10000)
     enabled: bool = True
@@ -38,6 +39,7 @@ class PairInput(StrictModel):
         if not self.enabled and not self.exclude_reason.strip():
             raise ValueError("제외 사유를 입력하세요.")
         self.group_key = self.group_key.strip()
+        self.class_label = self.class_label.strip()
         self.tier = self.tier.strip()
         return self
 
@@ -69,3 +71,29 @@ class CleanupInput(CleanupSource):
     padding: int = Field(default=1, ge=0, le=5)
     radius: float = Field(default=3, ge=1, le=10)
     cross_noise: bool = True
+
+
+class AutoCleanupInput(CleanupSource):
+    box: bool = True
+    cross: bool = True
+    replace_existing: bool = False
+
+
+class PairRevision(StrictModel):
+    id: str
+    revision: int = Field(ge=1)
+
+
+class GroupAssignment(PairRevision):
+    group_key: str | None = Field(default=None, max_length=200)
+    class_label: str | None = Field(default=None, max_length=200)
+
+
+class BulkGroupsInput(StrictModel):
+    assignments: list[GroupAssignment] = Field(min_length=1, max_length=10000)
+
+
+class ClusterInput(StrictModel):
+    pairs: list[PairRevision] = Field(min_length=2, max_length=2000)
+    clusters: int = Field(ge=2, le=50)
+    role: str = Field(default="reference", pattern="^(reference|query)$")

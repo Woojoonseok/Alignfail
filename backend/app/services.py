@@ -117,7 +117,7 @@ def image_dict(db, image):
 
 
 def pair_dict(db, pair):
-    result = {key: getattr(pair, key) for key in ["id", "project_id", "folder", "gt_x", "gt_y", "gt_source", "group_key", "tier", "notes", "enabled", "exclude_reason", "import_issues", "revision", "updated_at"]}
+    result = {key: getattr(pair, key) for key in ["id", "project_id", "folder", "gt_x", "gt_y", "gt_source", "group_key", "class_label", "tier", "notes", "enabled", "exclude_reason", "import_issues", "revision", "updated_at"]}
     result["reference"] = image_dict(db, db.get(ImageRecord, pair.reference_image_id)) if pair.reference_image_id else None
     result["query"] = image_dict(db, db.get(ImageRecord, pair.query_image_id)) if pair.query_image_id else None
     return result

@@ -51,6 +51,7 @@ export interface Pair {
   gt_y: number | null;
   gt_source: string;
   group_key: string;
+  class_label: string;
   tier: string;
   notes: string;
   enabled: boolean;
@@ -67,6 +68,7 @@ export type PairDraft = Pick<
   | "gt_x"
   | "gt_y"
   | "group_key"
+  | "class_label"
   | "tier"
   | "notes"
   | "enabled"
@@ -161,6 +163,7 @@ export const draftOf = (pair: Pair): PairDraft => ({
   gt_x: pair.gt_x,
   gt_y: pair.gt_y,
   group_key: pair.group_key,
+  class_label: pair.class_label,
   tier: pair.tier,
   notes: pair.notes,
   enabled: pair.enabled,
