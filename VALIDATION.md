@@ -1,5 +1,16 @@
 # Phase 1 검증 기록
 
+## v0.2.0 Training Studio Phase A–C — 2026-09-11
+
+- 자동 테스트 **56개 통과**(기존 deprecation warning 2건). TypeScript 검사·production build 및 Dataset/Training 두 Python 환경의 `pip check` 통과.
+- 별도 PyTorch 2.6.0+cpu / Python 3.12 환경으로 실제 학습 통합 검증. Dataset Studio 환경에는 torch를 추가하지 않았습니다.
+- Fixed 160/256/320 native 크기, 소수 중심·reflect padding, Adaptive min/max·반올림·중심 유지, near-black/low-std 경고, context에 따른 통계 변화 검사.
+- Group Fold 재현·분리, Split 간 동일 hash 차단, Version/실제 파일 변경 후 기존 실험 복사본 보존, REF ROI revision·범위, ROI 누락/비수동 Query GT 차단 검사.
+- 네 crop 모드에서 실제 CPU 1 epoch 학습·체크포인트·Validation 지표·Heatmap 생성, 중복 시작 차단, queued 작업 중단, running 작업 중단 후 checkpoint 보존, 설정 변조 실패 검사.
+- 알려진 특징 지도를 사용하는 inference에서 원본 `(112,96)` 예측 및 Heatmap peak 일치, 원본 이미지 크기 유지 검사. 오차 0 및 3-4-5 거리 검사.
+- 브라우저에서 합성 프로젝트 REF ROI 숫자 지정/저장, 새 버전 생성, Train/Validation 4/4 Pair 및 A/B 각 2/2 확인, 네 crop preview 확인, Fixed 160와 Adaptive 각 2 epoch 실행 완료·곡선·비교 표 확인. ROI 버튼의 의도치 않은 form submit을 발견해 수정했습니다.
+- 합성 데이터의 1–2 epoch 결과는 성능 개선을 의미하지 않습니다. 회사 Pattern A/B의 실제 품질, RTX 4090/WSL CUDA, 장시간 학습은 미검증입니다.
+
 ## v0.1.2 일괄 제거 · 그룹화 — 2026-09-10
 
 - 자동 테스트 총 **38개 통과**. 추가 검증: 일괄 제거의 기존 Clean 유지/재생성/후보 없음, 원본 변경 차단, 원본·GT 보존, 클래스/그룹 일괄 저장의 원자성·revision 충돌·프로젝트 범위·해제, 클러스터 재현성과 명시적 적용, 손상 이미지 제외, Clean 우선 사용, 동일 특징 유지, 기존 DB 마이그레이션, 클래스 버전 보존·비교.

@@ -53,6 +53,7 @@ class Pair(Base):
     gt_source: Mapped[str] = mapped_column(String(30), default="none")
     group_key: Mapped[str] = mapped_column(String(200), default="")
     class_label: Mapped[str] = mapped_column(String(200), default="")
+    pattern_type: Mapped[str] = mapped_column(String(10), default="unknown")
     tier: Mapped[str] = mapped_column(String(50), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -94,4 +95,16 @@ class ImageCleanup(Base):
     mask_path: Mapped[str] = mapped_column(Text)
     mask_hash: Mapped[str] = mapped_column(String(64))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[str] = mapped_column(String(40), default=now)
+
+
+class ReferenceAnnotation(Base):
+    __tablename__ = "reference_annotations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    pair_id: Mapped[str] = mapped_column(ForeignKey("pairs.id", ondelete="CASCADE"), index=True)
+    image_hash: Mapped[str] = mapped_column(String(64))
+    box: Mapped[list] = mapped_column(JSON)
+    center: Mapped[list] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(30))
+    revision: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[str] = mapped_column(String(40), default=now)

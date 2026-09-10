@@ -52,6 +52,15 @@ export interface Pair {
   gt_source: string;
   group_key: string;
   class_label: string;
+  pattern_type: "A" | "B" | "unknown";
+  reference_annotation: {
+    id: string;
+    image_hash: string;
+    box: number[];
+    center: number[];
+    source: string;
+    revision: number;
+  } | null;
   tier: string;
   notes: string;
   enabled: boolean;
@@ -69,6 +78,7 @@ export type PairDraft = Pick<
   | "gt_y"
   | "group_key"
   | "class_label"
+  | "pattern_type"
   | "tier"
   | "notes"
   | "enabled"
@@ -164,6 +174,7 @@ export const draftOf = (pair: Pair): PairDraft => ({
   gt_y: pair.gt_y,
   group_key: pair.group_key,
   class_label: pair.class_label,
+  pattern_type: pair.pattern_type,
   tier: pair.tier,
   notes: pair.notes,
   enabled: pair.enabled,

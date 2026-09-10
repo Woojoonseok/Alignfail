@@ -27,6 +27,7 @@ class PairInput(StrictModel):
     gt_y: float | None = None
     group_key: str = Field(default="", max_length=200)
     class_label: str = Field(default="", max_length=200)
+    pattern_type: str = Field(default="unknown", pattern="^(A|B|unknown)$")
     tier: str = Field(default="", max_length=50)
     notes: str = Field(default="", max_length=10000)
     enabled: bool = True

@@ -1,0 +1,6 @@
+# Install the appropriate CPU/CUDA PyTorch wheel separately, following pytorch.org.
+# PyTorch 2.6.0 was used for the local CPU integration test.
+numpy==2.5.3
+opencv-python-headless==4.14.0.94
+Pillow==12.3.0
+pydantic==2.13.5

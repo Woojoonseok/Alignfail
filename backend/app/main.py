@@ -2,6 +2,7 @@ import io
 import json
 import os
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -19,12 +20,18 @@ from .schemas import ImportInput, PairInput, ProjectInput, VersionInput
 from .services import audit_dataset, digest, gt_value, import_directory, pair_dict
 from .cleanup_api import register_cleanup_routes
 from .grouping import register_group_routes
+from .training_api import register_training_routes
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_app(state_dir: Path | None = None):
-    app = FastAPI(title="AlignFail Dataset Studio", version="0.1.2")
+    @asynccontextmanager
+    async def lifespan(app):
+        app.state.experiments.activate()
+        yield
+        app.state.experiments.close()
+    app = FastAPI(title="AlignFail Dataset Studio", version="0.2.0", lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     app.state.state_dir = state_dir or Path(os.getenv("ALIGNFAIL_STATE_DIR", str(ROOT / ".studio")))
     engine, factory = create_database(app.state.state_dir)
@@ -33,6 +40,7 @@ def create_app(state_dir: Path | None = None):
     write_lock = threading.RLock()
     register_cleanup_routes(app, factory, write_lock)
     register_group_routes(app, factory, write_lock)
+    register_training_routes(app, factory, write_lock)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_input(_request, exc):
@@ -77,7 +85,7 @@ def create_app(state_dir: Path | None = None):
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.1.2", "phase": "dataset-studio"}
+        return {"status": "ok", "version": "0.2.0", "phase": "dataset-studio"}
 
     @app.get("/api/projects")
     def list_projects(db: Session = Depends(session)):
@@ -257,7 +265,7 @@ def create_app(state_dir: Path | None = None):
             elif key not in new:
                 changes.append({"folder": old[key]["folder"], "fields": ["삭제"]})
             else:
-                fields = [f for f in ["gt_x", "gt_y", "gt_source", "group_key", "class_label", "tier", "enabled", "exclude_reason", "notes", "reference", "query", "import_issues"] if old[key].get(f, "") != new[key].get(f, "")]
+                fields = [f for f in ["gt_x", "gt_y", "gt_source", "group_key", "class_label", "pattern_type", "reference_annotation", "tier", "enabled", "exclude_reason", "notes", "reference", "query", "import_issues"] if old[key].get(f, "") != new[key].get(f, "")]
                 if fields:
                     changes.append({"folder": new[key]["folder"], "fields": fields})
         return {"base": base.number, "target": target.number, "changes": changes}

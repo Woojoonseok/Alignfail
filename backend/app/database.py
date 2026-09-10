@@ -20,6 +20,9 @@ def create_database(state_dir: Path):
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA busy_timeout=10000")
     Base.metadata.create_all(engine)
+    if "pattern_type" not in {c["name"] for c in inspect(engine).get_columns("pairs")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE pairs ADD COLUMN pattern_type VARCHAR(10) NOT NULL DEFAULT 'unknown'"))
     if "class_label" not in {c["name"] for c in inspect(engine).get_columns("pairs")}:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE pairs ADD COLUMN class_label VARCHAR(200) NOT NULL DEFAULT ''"))

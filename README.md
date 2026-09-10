@@ -1,6 +1,8 @@
 # AlignFail Dataset Studio
 
-회사 Windows + WSL 환경에서 로컬로 실행하는 AlignFail 데이터 검수 도구입니다. 현재 **Phase 1: Dataset Studio**를 구현합니다. 실제 학습·GPU 작업·모델 성능 평가는 아직 연결하지 않았습니다.
+회사 Windows + WSL 환경에서 로컬로 실행하는 AlignFail 데이터 검수·학습 도구입니다. Dataset Studio 위에 **Training Studio Phase A–C**를 추가했습니다. 160/256/320/Adaptive crop 진단과 실제 Triplet 학습·Validation 비교를 지원합니다. 회사 실제 데이터 성능은 아직 검증하지 않았습니다.
+
+**학습 설치·사용법:** [TRAINING.md](TRAINING.md). 데이터 검수만 사용할 때는 PyTorch가 필요하지 않습니다.
 
 ## 현재 지원
 
@@ -15,11 +17,14 @@
 - 썸네일 다중 선택, 클래스/그룹 필터와 이름 일괄 지정, 이미지 유사도 기반 클러스터 후보 검토·수정·적용.
 - 파일 누락·손상·변경·동일 SHA256, 잘못된 Pair, GT 누락·범위 검사.
 - 데이터 버전(immutable manifest), 버전 비교, GT JSON 및 Manifest 다운로드.
+- REF ROI/중심/revision 이력, Pattern A/B/unknown 메타데이터.
+- 이미지·설정·학습 소스를 실험별 고정, Group Fold 분리와 동일 이미지 hash 누수 차단, 실제 crop 미리보기·통계.
+- 별도 Python subprocess에서 Triplet 학습, 단일 작업 Queue·중단, best/last checkpoint, Pattern별 Validation 지표·crop 실험 비교.
 - 단계별 데이터 준비 안내와 진행 화면. 학습 기능을 실행하는 가짜 버튼이나 가짜 학습 결과는 없습니다.
 
 ## 회사 WSL 설치 / 실행
 
-WSL 내부에 Python **3.12**와 venv, Node.js **22.12 이상** 및 npm을 준비합니다. 이 릴리스의 데이터 도구에는 CUDA나 PyTorch 설치가 필요하지 않습니다. 향후 학습 Adapter는 기존 WSL CUDA/PyTorch 환경의 Python 실행 경로를 별도로 사용합니다.
+WSL 내부에 Python **3.12**와 venv, Node.js **22.12 이상** 및 npm을 준비합니다. 데이터 검수에는 CUDA나 PyTorch 설치가 필요하지 않습니다. 학습은 `ALIGNFAIL_TRAINING_PYTHON`으로 지정한 별도 WSL CUDA/PyTorch 환경을 사용합니다.
 
 가능하면 프로젝트와 `.studio` DB는 WSL Linux 파일시스템(예: `~/alignfail`)에 두고, 실제 이미지는 Windows 디스크를 참조하세요.
 
@@ -140,15 +145,15 @@ Pair Explorer의 **일괄 제거 · 그룹화**에서 작업합니다. 미저장
 
 제품 코드를 강제하지 않습니다. 같은 원본의 변형, 거의 같은 연속 촬영 등 연관된 Pair는 같은 `group_key`로 묶으세요. 완전 동일 파일은 SHA256으로 탐지해 검토 대상으로 표시합니다. 유사하다는 이유만으로 자동 삭제하거나 자동 그룹화하지 않습니다.
 
-현재 Audit 통과는 **파일·Pair·GT 검사의 통과**이며 Train/Test 누수가 없다는 의미가 아닙니다. 그룹 미지정은 검토 항목입니다. 클러스터 후보를 적용한 뒤에도 Group Split과 Split 간 중복 검사는 별도로 필요하며 아직 구현하지 않았습니다.
+현재 Dataset Audit 통과는 **파일·Pair·GT 검사의 통과**입니다. Training에서 별도로 group_key 기반 Train/Validation Fold 분리와 이미지 hash 중복 검사를 수행합니다. 자동 클러스터만으로 촬영 관계나 모든 유사 이미지 누수가 해소됐다고 볼 수는 없습니다.
 
 ## 기존 JSON / 학습 코드 연결 계획
 
 기존 외부 JSON 형식은 아직 제공되지 않아 임의로 해석하지 않습니다. 현재 GT 내보내기는 `alignfail.annotations.v1` 형식입니다. 외부 형식을 받은 뒤 `pair 폴더 이름 → GT 좌표` 매핑을 검증하고 같은 저장·이력 규칙을 사용하는 Import Adapter를 추가합니다.
 
-후속 학습 Adapter의 공통 입력은 dataset manifest, split manifest, experiment config, output directory입니다. 출력은 실행 로그·학습 곡선·checkpoint·Pair별 예측 및 원본 좌표입니다. 기존 Metric Patch Localizer와 신규 Dense Pair Localizer를 동일한 평가 규격으로 비교할 예정입니다.
+학습 공통 입력은 고정한 dataset manifest, split manifest, experiment config입니다. 출력은 실행 로그·학습 곡선·checkpoint·Pair별 예측 및 원본 좌표입니다. 현재 모델은 명세로 새로 구현한 Metric Patch Triplet v1이며 회사의 기존 SupCon/Prototype 코드를 재현한 모델은 아닙니다.
 
-**미구현:** 외부 JSON Import, REF mask/box·Legacy 좌표 등록, 신경망 임베딩 유사도 검색, Split/누수 Gate, GPU Queue, Stage 1/Probe/Stage 2, 모델 학습 코드, Heatmap/평가/Champion. 회사 데이터와 기존 코드로 단계적으로 연결합니다.
+**후속 범위:** 외부 JSON Import, Legacy 좌표/원본 코드 Adapter, 신경망 임베딩 유사도 검색, Multi-scale·Dense Pair/Offset 모델, 독립 Test/Probe, 자동 CV 집계, Stage 1/2, 고급 실패 분석과 Champion 관리. 상세 범위는 [TRAINING.md](TRAINING.md)를 확인하세요.
 
 ## 구조
 
@@ -157,5 +162,6 @@ backend/app/       FastAPI · SQLAlchemy · 파일 검사/GT/버전
 backend/tests/     기능·데이터 무결성 API 테스트
 frontend/src/      React 18 · TypeScript · TanStack Query · React Router
 scripts/           WSL/Windows 실행 · 합성 이미지 생성
-.studio/           로컬 DB (Git 제외)
+training/          crop · diagnostics · group split · PyTorch model/train/evaluation
+.studio/           로컬 DB · Clean · 실험 스냅샷/체크포인트 (Git 제외)
 ```

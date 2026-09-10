@@ -64,6 +64,8 @@ import {
 } from "./api";
 import ImageCleaner from "./ImageCleaner";
 import BatchTools from "./BatchTools";
+import ReferenceROI from "./ReferenceROI";
+import TrainingPage from "./TrainingPage";
 
 type Notify = (message: string) => void;
 type PageProps = {
@@ -206,17 +208,19 @@ export default function App() {
     localStorage.setItem("alignfail.project", id);
   };
   const page =
-    location.pathname === "/"
-      ? "Overview"
-      : location.pathname === "/pairs"
-        ? "Pair Explorer"
-        : location.pathname === "/audit"
-          ? "Dataset Audit"
-          : location.pathname === "/versions"
-            ? "Dataset Versions"
-            : location.pathname === "/workflow"
-              ? "Workflow"
-              : "Project Settings";
+    location.pathname === "/training"
+      ? "Training"
+      : location.pathname === "/"
+        ? "Overview"
+        : location.pathname === "/pairs"
+          ? "Pair Explorer"
+          : location.pathname === "/audit"
+            ? "Dataset Audit"
+            : location.pathname === "/versions"
+              ? "Dataset Versions"
+              : location.pathname === "/workflow"
+                ? "Workflow"
+                : "Project Settings";
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -276,6 +280,9 @@ export default function App() {
             <Files size={18} /> Versions
           </NavLink>
           <div className="nav-caption">DEVELOPMENT</div>
+          <NavLink to="/training">
+            <Activity size={18} /> Training
+          </NavLink>
           <NavLink to="/workflow">
             <GitBranch size={18} /> Step-by-step
           </NavLink>
@@ -298,7 +305,7 @@ export default function App() {
           </div>
           <p>데이터는 연결된 컴퓨터에 저장됩니다.</p>
           <div className="build-label">
-            DATASET STUDIO <span>v0.1</span>
+            ALIGNFAIL STUDIO <span>v0.2.0</span>
           </div>
         </div>
       </aside>
@@ -341,6 +348,7 @@ export default function App() {
                         "검수한 데이터를 고정하고, 변경 내용을 추적하세요.",
                       Workflow:
                         "데이터 준비부터 모델 개선까지, 한 단계씩 진행합니다.",
+                      Training: "입력을 비교하고, 같은 조건에서 모델을 학습·평가하세요.",
                       "Project Settings":
                         "프로젝트 정보와 데이터 저장 위치를 관리하세요.",
                     } as Record<string, string>
@@ -412,6 +420,12 @@ export default function App() {
             </div>
           ) : (
             <Routes>
+              <Route
+                path="/training"
+                element={
+                  <TrainingPage key={project.id} projectId={project.id} />
+                }
+              />
               <Route
                 path="/"
                 element={
@@ -1003,7 +1017,15 @@ function PairExplorer({
     );
   return (
     <div className="explorer-layout">
-      {batchOpen && <BatchTools projectId={project.id} pairs={pairs} refresh={refresh} close={() => setBatchOpen(false)} onBusy={setBatchBusy} />}
+      {batchOpen && (
+        <BatchTools
+          projectId={project.id}
+          pairs={pairs}
+          refresh={refresh}
+          close={() => setBatchOpen(false)}
+          onBusy={setBatchBusy}
+        />
+      )}
       <aside className="pair-list panel">
         <div className="pair-list-header">
           <strong>
@@ -1011,7 +1033,13 @@ function PairExplorer({
           </strong>
           <SlidersHorizontal size={16} />
         </div>
-        <button className="button secondary batch-open" disabled={dirty} onClick={() => setBatchOpen(true)}>일괄 제거 · 그룹화</button>
+        <button
+          className="button secondary batch-open"
+          disabled={dirty}
+          onClick={() => setBatchOpen(true)}
+        >
+          일괄 제거 · 그룹화
+        </button>
         <div className="search-input">
           <Search size={15} />
           <input
@@ -1329,6 +1357,7 @@ function PairEditor({
   const [showGT, setShowGT] = useState(true);
   const [tab, setTab] = useState("metadata");
   const [cleaningImage, setCleaningImage] = useState<ImageRecord | null>(null);
+  const [roiOpen, setRoiOpen] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(pair));
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   const history = useQuery({
@@ -1357,6 +1386,19 @@ function PairEditor({
             await refresh();
             notify(
               "이미지 표시 제거 설정을 저장했습니다. 원본과 GT는 유지됩니다.",
+            );
+          }}
+        />
+      )}
+      {roiOpen && (
+        <ReferenceROI
+          pair={pair}
+          close={() => setRoiOpen(false)}
+          saved={async () => {
+            setRoiOpen(false);
+            await refresh();
+            notify(
+              "REF ROI를 저장했습니다. 학습 전에 새 Dataset Version을 생성하세요.",
             );
           }}
         />
@@ -1521,7 +1563,48 @@ function PairEditor({
             </div>
             {tab === "metadata" ? (
               <div className="metadata-body">
-                <label>클래스<input value={draft.class_label} onChange={(e) => field("class_label", e.target.value)} maxLength={200} placeholder="예: connector / pad" /></label>
+                <div className="training-controls">
+                    <button
+                      type="button"
+                      className="button secondary small"
+                      disabled={
+                      dirty || !pair.reference || !!pair.reference.error
+                    }
+                    onClick={() => setRoiOpen(true)}
+                  >
+                    REF ROI 지정
+                  </button>
+                  <span>
+                    {pair.reference_annotation
+                      ? `중심 ${pair.reference_annotation.center.join(", ")}`
+                      : "REF ROI 미지정"}
+                  </span>
+                  <label>
+                    Pattern Type
+                    <select
+                      value={draft.pattern_type}
+                      onChange={(e) =>
+                        field(
+                          "pattern_type",
+                          e.target.value as Pair["pattern_type"],
+                        )
+                      }
+                    >
+                      <option value="unknown">unknown</option>
+                      <option>A</option>
+                      <option>B</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  클래스
+                  <input
+                    value={draft.class_label}
+                    onChange={(e) => field("class_label", e.target.value)}
+                    maxLength={200}
+                    placeholder="예: connector / pad"
+                  />
+                </label>
                 <div className="metadata-row">
                   <label>
                     데이터 그룹
@@ -2073,6 +2156,13 @@ function Workflow({ project, pairs }: { project: Project; pairs: Pair[] }) {
       complete: !!versions.data?.length,
       label: "Versions",
     },
+    {
+      title: "Crop 진단 · 학습 · 비교",
+      text: "REF ROI를 포함한 버전에서 Group Split을 검증하고 160·256·320·Adaptive를 비교합니다.",
+      route: "/training",
+      complete: false,
+      label: "Training",
+    },
   ];
   return (
     <>
@@ -2081,8 +2171,7 @@ function Workflow({ project, pairs }: { project: Project; pairs: Pair[] }) {
         <div>
           <h2>먼저 데이터 기반을 완성합니다.</h2>
           <p>
-            현재 릴리스는 데이터 준비 4단계를 지원합니다. 실제 학습 실행과 GPU
-            연결은 다음 구현 단계입니다.
+            데이터 준비 후 Training에서 실제 학습을 실행할 수 있습니다. 회사의 CUDA Python 환경을 연결하고 먼저 crop 입력을 확인하세요.
           </p>
         </div>
         <span className="badge green">PHASE 01</span>
@@ -2111,18 +2200,18 @@ function Workflow({ project, pairs }: { project: Project; pairs: Pair[] }) {
       <div className="future-grid">
         {[
           {
-            title: "Split · Leakage",
-            detail: "데이터 그룹 분리 / Probe / Group CV",
+            title: "Probe · Final Test",
+            detail: "독립 Test / 전이 성능 / 교차검증 집계",
             icon: <GitBranch />,
           },
           {
-            title: "Training · Experiments",
-            detail: "기존 코드 연결 / Stage 1·2 / GPU Queue",
+            title: "Multi-scale · Dense Pair",
+            detail: "Local + Context / 기존 회사 코드 Adapter",
             icon: <Activity />,
           },
           {
             title: "Evaluation · Models",
-            detail: "정밀도 비교 / 실패 분석 / Champion",
+            detail: "고급 실패 분석 / Model Registry / Champion",
             icon: <Target />,
           },
         ].map((s) => (

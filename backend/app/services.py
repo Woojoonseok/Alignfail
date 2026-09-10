@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
-from .models import GTHistory, ImageCleanup, ImageRecord, Pair, now
+from .models import GTHistory, ImageCleanup, ImageRecord, Pair, ReferenceAnnotation, now
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -120,6 +120,9 @@ def pair_dict(db, pair):
     result = {key: getattr(pair, key) for key in ["id", "project_id", "folder", "gt_x", "gt_y", "gt_source", "group_key", "class_label", "tier", "notes", "enabled", "exclude_reason", "import_issues", "revision", "updated_at"]}
     result["reference"] = image_dict(db, db.get(ImageRecord, pair.reference_image_id)) if pair.reference_image_id else None
     result["query"] = image_dict(db, db.get(ImageRecord, pair.query_image_id)) if pair.query_image_id else None
+    result["pattern_type"] = pair.pattern_type
+    annotation = db.scalar(select(ReferenceAnnotation).where(ReferenceAnnotation.pair_id == pair.id).order_by(ReferenceAnnotation.revision.desc()))
+    result["reference_annotation"] = None if not annotation else {key:getattr(annotation,key) for key in ["id","image_hash","box","center","source","revision","created_at"]}
     return result
 
 
