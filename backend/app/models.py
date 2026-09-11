@@ -54,12 +54,26 @@ class Pair(Base):
     group_key: Mapped[str] = mapped_column(String(200), default="")
     class_label: Mapped[str] = mapped_column(String(200), default="")
     pattern_type: Mapped[str] = mapped_column(String(10), default="unknown")
+    modality: Mapped[str] = mapped_column(String(10), default="")  # OM / SEM / "" (from file names)
+    match_result: Mapped[str] = mapped_column(String(10), default="unknown")  # s*/e* file prefix
     tier: Mapped[str] = mapped_column(String(50), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     exclude_reason: Mapped[str] = mapped_column(Text, default="")
     import_issues: Mapped[list] = mapped_column(JSON, default=list)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[str] = mapped_column(String(40), default=now)
+
+
+class ClassTemplate(Base):
+    """Representative REF image for a template class; REF-less pairs attached to the class link to it."""
+
+    __tablename__ = "class_templates"
+    __table_args__ = (UniqueConstraint("project_id", "class_label"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    class_label: Mapped[str] = mapped_column(String(200))
+    reference_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[str] = mapped_column(String(40), default=now)
 
 

@@ -103,6 +103,8 @@ def evaluate(model, rows, config, directory, managed, export=False):
             "error": float(np.linalg.norm(np.subtract(pred, row["query_gt"]))),
             "score": score,
             "pattern_type": row["pattern_type"],
+            "modality": row.get("modality", ""),
+            "match_result": row.get("match_result", "unknown"),
             "tier": row["tier"],
             "seconds": time.perf_counter() - start,
         }

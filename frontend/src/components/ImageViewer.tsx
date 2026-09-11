@@ -18,6 +18,7 @@ export function ImageViewer({
   setZoom,
   showGT,
   onClean,
+  emptyHint,
 }: {
   image: ImageRecord | null;
   title: string;
@@ -27,6 +28,7 @@ export function ImageViewer({
   setZoom: (n: number) => void;
   showGT: boolean;
   onClean?: () => void;
+  emptyHint?: string;
 }) {
   const [failed, setFailed] = useState(false);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
@@ -79,7 +81,7 @@ export function ImageViewer({
                   ? "이미지를 불러올 수 없습니다."
                   : `${title} 이미지가 없습니다.`)}
             </strong>
-            <span>파일과 폴더 재검색 결과를 확인하세요.</span>
+            <span>{emptyHint ?? "파일과 폴더 재검색 결과를 확인하세요."}</span>
           </div>
         ) : (
           <div

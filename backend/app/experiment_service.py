@@ -29,7 +29,9 @@ def prepare(version, config, directory):
             continue
         annotation = pair.get("reference_annotation")
         if pair["import_issues"] or pair["gt_source"] != "manual" or pair["gt_x"] is None or pair["gt_y"] is None:
-            raise ValueError(f"{pair['folder']}: 파일 오류 없는 Pair와 수동 Query GT가 필요합니다.")
+            raise ValueError(f"{pair['folder']}: 파일 오류 없는 Pair와 수동(또는 확인된) Query GT가 필요합니다.")
+        if not pair.get("reference"):
+            raise ValueError(f"{pair['folder']}: REF 미연결 Pair입니다. 클래스 템플릿을 붙이거나 제외하세요.")
         if not annotation or annotation["image_hash"] != pair["reference"]["file_hash"]:
             raise ValueError(f"{pair['folder']}: 유효한 REF ROI가 포함된 새 Dataset Version을 생성하세요.")
         row = {
@@ -41,6 +43,8 @@ def prepare(version, config, directory):
             "reference_annotation": annotation,
             "query_gt": [pair["gt_x"], pair["gt_y"]],
             "pattern_type": pair.get("pattern_type", "unknown"),
+            "modality": pair.get("modality", ""),
+            "match_result": pair.get("match_result", "unknown"),
             "tier": pair["tier"],
             "class_label": pair.get("class_label", ""),
         }

@@ -41,7 +41,11 @@ export function PairExplorer({
         (filter === "missing" && p.enabled && p.gt_x === null) ||
         (filter === "done" && p.enabled && p.gt_x !== null) ||
         (filter === "issues" && !!p.import_issues.length) ||
-        (filter === "excluded" && !p.enabled)),
+        (filter === "excluded" && !p.enabled) ||
+        (filter === "unlinked" && p.enabled && !p.reference) ||
+        (filter === "auto_gt" && p.enabled && p.gt_source === "auto_cross") ||
+        (filter === "OM" && p.modality === "OM") ||
+        (filter === "SEM" && p.modality === "SEM")),
   );
   // When grouped by class the visible order (and prev/next) follows the class sections.
   const sections = byClass
@@ -133,6 +137,10 @@ export function PairExplorer({
           <option value="done">GT 완료</option>
           <option value="issues">파일 확인 필요</option>
           <option value="excluded">제외됨</option>
+          <option value="unlinked">REF 미연결</option>
+          <option value="auto_gt">자동 GT 확인 필요</option>
+          <option value="OM">OM만</option>
+          <option value="SEM">SEM만</option>
         </select>
         <label className="checkbox-label pair-list-toggle">
           <input

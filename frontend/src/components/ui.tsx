@@ -79,6 +79,10 @@ export function Status({ pair }: { pair: Pair }) {
     <span className="badge amber">
       <Circle size={10} /> GT 미지정
     </span>
+  ) : pair.gt_source === "auto_cross" ? (
+    <span className="badge amber">
+      <Circle size={10} /> 자동 GT · 확인 필요
+    </span>
   ) : (
     <span className="badge green">
       <Check size={12} /> GT 완료

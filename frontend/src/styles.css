@@ -151,6 +151,12 @@ code,
   display: flex;
   flex-direction: column;
   z-index: 20;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3b4c50 transparent;
+}
+.sidebar nav {
+  flex-shrink: 0;
 }
 .brand {
   display: flex;
@@ -239,7 +245,7 @@ code,
   font-size: 9px;
   letter-spacing: 1.5px;
   color: #6f8a91;
-  margin: 25px 10px 12px;
+  margin: 18px 10px 8px;
   font-weight: 600;
 }
 .sidebar nav a {
@@ -247,8 +253,8 @@ code,
   gap: 12px;
   align-items: center;
   font-size: 12px;
-  padding: 13px 12px;
-  margin: 4px 0;
+  padding: 10px 12px;
+  margin: 2px 0;
   border-radius: 6px;
   color: #aebfc4;
   transition:
@@ -274,8 +280,24 @@ code,
 }
 .sidebar-bottom {
   margin-top: auto;
-  padding: 30px 9px 0;
+  padding: 22px 9px 0;
   font-size: 10px;
+  flex-shrink: 0;
+}
+@media (max-height: 820px) {
+  .sidebar {
+    padding-top: 22px;
+  }
+  .workspace-caption {
+    margin-top: 24px;
+  }
+  .sidebar-bottom p {
+    display: none;
+  }
+  .build-label {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
 }
 .local-status {
   display: flex;
