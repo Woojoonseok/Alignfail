@@ -1,6 +1,6 @@
+import json
 import os
 import re
-import json
 import shutil
 import sys
 from pathlib import Path
@@ -12,6 +12,7 @@ from pydantic import Field
 
 from training.config import TrainingConfig
 from training.data import sha
+
 from .experiment_service import ExperimentManager, load_json, prepare, write_json
 from .models import DatasetVersion, ImageRecord, Pair, ReferenceAnnotation, now, uid
 from .schemas import StrictModel
@@ -26,8 +27,8 @@ class PrepareInput(StrictModel):
 class ReferenceInput(StrictModel):
     revision: int = Field(ge=1)
     image_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
-    box: list[float] = Field(min_length=4,max_length=4)
-    source: Literal["ref_box_manual","ref_box_auto"] = "ref_box_manual"
+    box: list[float] = Field(min_length=4, max_length=4)
+    source: Literal["ref_box_manual", "ref_box_auto"] = "ref_box_manual"
 
 
 def register_training_routes(app, factory, write_lock):
@@ -42,80 +43,128 @@ def register_training_routes(app, factory, write_lock):
         try:
             return manager.path(experiment_id)
         except ValueError as exc:
-            raise HTTPException(404,str(exc)) from exc
+            raise HTTPException(404, str(exc)) from exc
 
     @app.put("/api/pairs/{pair_id}/reference-annotation")
     def annotate(pair_id: str, data: ReferenceInput, db=Depends(session)):
         with write_lock:
-            pair = db.get(Pair,pair_id)
+            pair = db.get(Pair, pair_id)
             if not pair:
-                raise HTTPException(404,"Pair 없음")
+                raise HTTPException(404, "Pair 없음")
             if data.revision != pair.revision:
-                raise HTTPException(409,"Pair가 변경되었습니다. 새로고침하세요.")
-            record = db.get(ImageRecord,pair.reference_image_id) if pair.reference_image_id else None
+                raise HTTPException(409, "Pair가 변경되었습니다. 새로고침하세요.")
+            record = db.get(ImageRecord, pair.reference_image_id) if pair.reference_image_id else None
             try:
-                valid = record and record.file_hash == data.image_hash and digest(Path(record.file_path)) == data.image_hash
+                valid = (
+                    record and record.file_hash == data.image_hash and digest(Path(record.file_path)) == data.image_hash
+                )
             except OSError:
                 valid = False
             if not valid or record.error:
-                raise HTTPException(409,"REF가 변경되었거나 읽을 수 없습니다. 재검색하세요.")
-            x0,y0,x1,y1 = data.box
-            if not (0<=x0<x1<record.width and 0<=y0<y1<record.height):
-                raise HTTPException(422,"ROI는 이미지 내 두 모서리 좌표여야 합니다 (x0<x1, y0<y1).")
+                raise HTTPException(409, "REF가 변경되었거나 읽을 수 없습니다. 재검색하세요.")
+            x0, y0, x1, y1 = data.box
+            if not (0 <= x0 < x1 < record.width and 0 <= y0 < y1 < record.height):
+                raise HTTPException(422, "ROI는 이미지 내 두 모서리 좌표여야 합니다 (x0<x1, y0<y1).")
             pair.revision += 1
             pair.updated_at = now()
-            db.add(ReferenceAnnotation(pair_id=pair_id,image_hash=data.image_hash,box=data.box,center=[(x0+x1)/2,(y0+y1)/2],source=data.source,revision=pair.revision))
+            db.add(
+                ReferenceAnnotation(
+                    pair_id=pair_id,
+                    image_hash=data.image_hash,
+                    box=data.box,
+                    center=[(x0 + x1) / 2, (y0 + y1) / 2],
+                    source=data.source,
+                    revision=pair.revision,
+                )
+            )
             db.commit()
-            return pair_dict(db,pair)
+            return pair_dict(db, pair)
 
     @app.get("/api/training/environment")
     def environment():
-        return {"python":os.getenv("ALIGNFAIL_TRAINING_PYTHON",sys.executable),
-                "model":"metric_patch_v1", "baseline":"New Triplet CNN baseline; not a reproduction of legacy code"}
+        return {
+            "python": os.getenv("ALIGNFAIL_TRAINING_PYTHON", sys.executable),
+            "model": "metric_patch_v1",
+            "baseline": "New Triplet CNN baseline; not a reproduction of legacy code",
+        }
 
-    @app.post("/api/training/prepare",status_code=201)
+    @app.post("/api/training/prepare", status_code=201)
     def prepare_experiment(data: PrepareInput, db=Depends(session)):
         with write_lock:
-            version = db.get(DatasetVersion,data.version_id)
+            version = db.get(DatasetVersion, data.version_id)
             if not version:
-                raise HTTPException(404,"Dataset Version 없음")
+                raise HTTPException(404, "Dataset Version 없음")
             experiment_id = uid()
             directory = manager.root / experiment_id
             try:
-                manifest, split, stats = prepare(version,data.config.model_dump(),directory)
+                manifest, split, stats = prepare(version, data.config.model_dump(), directory)
             except (OSError, ValueError) as exc:
                 if directory.resolve().parent == manager.root and directory.name == experiment_id:
-                    shutil.rmtree(directory,ignore_errors=True)
-                raise HTTPException(422,str(exc)) from exc
-            comparison_config = data.config.model_dump(exclude={"crop_mode","context_ratio","min_crop","max_crop","output_size","near_black_mean","low_std","low_edge_density"})
-            code = {key:value for key,value in load_json(directory / "integrity.json").items() if key.startswith("code")}
-            comparison_hash = sha(json.dumps({"version":version.id,"split":split["hash"],"config":comparison_config,"code":code},sort_keys=True).encode())
-            state = {"id":experiment_id,"project_id":version.project_id,"version_id":version.id,"version":version.number,
-                     "status":"prepared","created_at":now(),"config":data.config.model_dump(),"split_hash":split["hash"],"comparison_hash":comparison_hash}
-            write_json(directory / "experiment.json",state)
-            return {**state,"manifest":manifest,"split":split,"diagnostics":stats}
+                    shutil.rmtree(directory, ignore_errors=True)
+                raise HTTPException(422, str(exc)) from exc
+            comparison_config = data.config.model_dump(
+                exclude={
+                    "crop_mode",
+                    "context_ratio",
+                    "min_crop",
+                    "max_crop",
+                    "output_size",
+                    "near_black_mean",
+                    "low_std",
+                    "low_edge_density",
+                }
+            )
+            code = {
+                key: value for key, value in load_json(directory / "integrity.json").items() if key.startswith("code")
+            }
+            comparison_hash = sha(
+                json.dumps(
+                    {"version": version.id, "split": split["hash"], "config": comparison_config, "code": code},
+                    sort_keys=True,
+                ).encode()
+            )
+            state = {
+                "id": experiment_id,
+                "project_id": version.project_id,
+                "version_id": version.id,
+                "version": version.number,
+                "status": "prepared",
+                "created_at": now(),
+                "config": data.config.model_dump(),
+                "split_hash": split["hash"],
+                "comparison_hash": comparison_hash,
+            }
+            write_json(directory / "experiment.json", state)
+            return {**state, "manifest": manifest, "split": split, "diagnostics": stats}
 
     @app.get("/api/projects/{project_id}/experiments")
     def experiments(project_id: str):
         values = [load_json(p) for p in manager.root.glob("*/experiment.json")]
         result = []
-        for value in sorted(values,key=lambda v:v["created_at"],reverse=True):
+        for value in sorted(values, key=lambda v: v["created_at"], reverse=True):
             if value["project_id"] == project_id:
                 metrics = manager.root / value["id"] / "metrics.json"
-                result.append({**value,"metrics":load_json(metrics) if metrics.exists() else None})
+                result.append({**value, "metrics": load_json(metrics) if metrics.exists() else None})
         return result
 
     @app.get("/api/experiments/{experiment_id}")
     def detail(experiment_id: str):
         path = path_for(experiment_id)
         state = load_json(path / "experiment.json")
-        for key, filename in [("manifest","dataset_manifest.json"),("split","split_manifest.json"),("diagnostics","diagnostics.json"),("history","history.json"),("metrics","metrics.json"),("predictions","predictions.json")]:
+        for key, filename in [
+            ("manifest", "dataset_manifest.json"),
+            ("split", "split_manifest.json"),
+            ("diagnostics", "diagnostics.json"),
+            ("history", "history.json"),
+            ("metrics", "metrics.json"),
+            ("predictions", "predictions.json"),
+        ]:
             state[key] = load_json(path / filename) if (path / filename).exists() else None
         log = path / "train.log"
         if log.exists():
             with log.open("rb") as f:
-                f.seek(max(0,log.stat().st_size-24000))
-                state["log"] = f.read().decode("utf-8",errors="replace")
+                f.seek(max(0, log.stat().st_size - 24000))
+                state["log"] = f.read().decode("utf-8", errors="replace")
         else:
             state["log"] = ""
         return state
@@ -125,24 +174,39 @@ def register_training_routes(app, factory, write_lock):
         try:
             manager.start(path_for(experiment_id))
         except ValueError as exc:
-            raise HTTPException(409,str(exc)) from exc
-        return {"queued":True}
+            raise HTTPException(409, str(exc)) from exc
+        return {"queued": True}
 
     @app.post("/api/experiments/{experiment_id}/stop")
     def stop(experiment_id: str):
         manager.stop(path_for(experiment_id))
-        return {"stop_requested":True}
+        return {"stop_requested": True}
 
     @app.get("/api/experiments/{experiment_id}/files/{kind}/{name}")
     def artifact(experiment_id: str, kind: str, name: str):
         root = path_for(experiment_id)
-        if kind in {"preview","heatmaps"} and re.fullmatch(r"[a-zA-Z0-9_-]+\.png",name):
+        if kind in {"preview", "heatmaps"} and re.fullmatch(r"[a-zA-Z0-9_-]+\.png", name):
             path = root / kind / name
-        elif kind == "artifacts" and name in {"config.json","dataset_manifest.json","split_manifest.json","environment.json","train.log","metrics.json","history.json","predictions.json","best.pt","last.pt"}:
+        elif kind == "artifacts" and name in {
+            "config.json",
+            "dataset_manifest.json",
+            "split_manifest.json",
+            "environment.json",
+            "train.log",
+            "metrics.json",
+            "history.json",
+            "predictions.json",
+            "best.pt",
+            "last.pt",
+        }:
             path = root / name
         else:
-            raise HTTPException(404,"지원하지 않는 파일")
+            raise HTTPException(404, "지원하지 않는 파일")
         if not path.is_file():
-            raise HTTPException(404,"파일 없음")
-        return FileResponse(path, media_type="image/png" if path.suffix == ".png" else None,
-                            filename=None if path.suffix == ".png" else name,headers={"Cache-Control":"no-store"})
+            raise HTTPException(404, "파일 없음")
+        return FileResponse(
+            path,
+            media_type="image/png" if path.suffix == ".png" else None,
+            filename=None if path.suffix == ".png" else name,
+            headers={"Cache-Control": "no-store"},
+        )

@@ -1,4 +1,5 @@
 """Package source + built UI, excluding all datasets, DBs and platform environments."""
+
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -9,11 +10,18 @@ EXCLUDED = {"node_modules", "__pycache__", ".pytest_cache", ".venv"}
 def main():
     if not (ROOT / "frontend/dist/index.html").is_file():
         raise SystemExit("Build the frontend first: npm --prefix frontend run build")
-    paths = [ROOT / name for name in ["README.md", "TRAINING.md", "VALIDATION.md", "pytest.ini", ".gitignore", ".gitattributes"]]
+    paths = [
+        ROOT / name
+        for name in ["README.md", "TRAINING.md", "VALIDATION.md", "pytest.ini", ".gitignore", ".gitattributes"]
+    ]
     for directory in ["backend", "frontend", "scripts", "training"]:
-        paths.extend(p for p in (ROOT / directory).rglob("*")
-                     if p.is_file() and not EXCLUDED.intersection(p.relative_to(ROOT).parts)
-                     and p.suffix not in {".pyc", ".tsbuildinfo"})
+        paths.extend(
+            p
+            for p in (ROOT / directory).rglob("*")
+            if p.is_file()
+            and not EXCLUDED.intersection(p.relative_to(ROOT).parts)
+            and p.suffix not in {".pyc", ".tsbuildinfo"}
+        )
     destination = ROOT / "artifacts/alignfail-dataset-studio-v0.2.0.zip"
     destination.parent.mkdir(exist_ok=True)
     with ZipFile(destination, "w", ZIP_DEFLATED) as bundle:

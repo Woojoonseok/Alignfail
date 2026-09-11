@@ -348,7 +348,8 @@ export default function App() {
                         "검수한 데이터를 고정하고, 변경 내용을 추적하세요.",
                       Workflow:
                         "데이터 준비부터 모델 개선까지, 한 단계씩 진행합니다.",
-                      Training: "입력을 비교하고, 같은 조건에서 모델을 학습·평가하세요.",
+                      Training:
+                        "입력을 비교하고, 같은 조건에서 모델을 학습·평가하세요.",
                       "Project Settings":
                         "프로젝트 정보와 데이터 저장 위치를 관리하세요.",
                     } as Record<string, string>
@@ -1564,10 +1565,10 @@ function PairEditor({
             {tab === "metadata" ? (
               <div className="metadata-body">
                 <div className="training-controls">
-                    <button
-                      type="button"
-                      className="button secondary small"
-                      disabled={
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    disabled={
                       dirty || !pair.reference || !!pair.reference.error
                     }
                     onClick={() => setRoiOpen(true)}
@@ -2171,7 +2172,8 @@ function Workflow({ project, pairs }: { project: Project; pairs: Pair[] }) {
         <div>
           <h2>먼저 데이터 기반을 완성합니다.</h2>
           <p>
-            데이터 준비 후 Training에서 실제 학습을 실행할 수 있습니다. 회사의 CUDA Python 환경을 연결하고 먼저 crop 입력을 확인하세요.
+            데이터 준비 후 Training에서 실제 학습을 실행할 수 있습니다. 회사의
+            CUDA Python 환경을 연결하고 먼저 crop 입력을 확인하세요.
           </p>
         </div>
         <span className="badge green">PHASE 01</span>

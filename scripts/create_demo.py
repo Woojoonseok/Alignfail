@@ -1,4 +1,5 @@
 """Generate visibly synthetic fixtures. Never uses company data or overwrites a folder."""
+
 import argparse
 import random
 from pathlib import Path
@@ -17,8 +18,12 @@ def board(width, height, x, y, seed, query=False):
             draw.rectangle((col + 4, row + 4, col + 13, row + 13), fill=(37, 42, 40))
     for j in range(5):
         yy = 55 + j * 69
-        draw.line([(0, yy), (90 + j * 35, yy), (140 + j * 35, yy + 37), (width, yy + 37)], fill=(120, 125, 116), width=3)
-        draw.line([(0, yy + 7), (86 + j * 35, yy + 7), (136 + j * 35, yy + 44), (width, yy + 44)], fill=(81, 90, 83), width=2)
+        draw.line(
+            [(0, yy), (90 + j * 35, yy), (140 + j * 35, yy + 37), (width, yy + 37)], fill=(120, 125, 116), width=3
+        )
+        draw.line(
+            [(0, yy + 7), (86 + j * 35, yy + 7), (136 + j * 35, yy + 44), (width, yy + 44)], fill=(81, 90, 83), width=2
+        )
     draw.rectangle((x - 62, y - 62, x + 62, y + 62), fill=(31, 37, 35), outline=(134, 139, 121), width=2)
     draw.rectangle((x - 45, y - 45, x + 45, y + 45), fill=(81, 91, 82), outline=(148, 156, 133), width=3)
     for offset in [-29, -15, 0, 15, 29]:
@@ -30,8 +35,10 @@ def board(width, height, x, y, seed, query=False):
     draw.line((x - 10, y, x + 10, y), fill=(174, 182, 159), width=2)
     draw.line((x, y - 10, x, y + 10), fill=(174, 182, 159), width=2)
     draw.rectangle((0, height - 25, width, height), fill=(31, 40, 37))
-    draw.text((12, height - 18), f"SYNTHETIC TEST IMAGE / {'QUERY' if query else 'REF'} / {seed:03d}", fill=(141, 164, 143))
-    return image.filter(ImageFilter.GaussianBlur(.25 if query else .1))
+    draw.text(
+        (12, height - 18), f"SYNTHETIC TEST IMAGE / {'QUERY' if query else 'REF'} / {seed:03d}", fill=(141, 164, 143)
+    )
+    return image.filter(ImageFilter.GaussianBlur(0.25 if query else 0.1))
 
 
 def main():

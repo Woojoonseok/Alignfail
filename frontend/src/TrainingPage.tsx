@@ -147,7 +147,9 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
   const exp = detail.data;
   const row =
     exp?.manifest?.pairs.find((p) => p.pair_id === pairId) ??
-    exp?.manifest?.pairs.find((p) => p.pair_id === exp.predictions?.[0]?.pair_id) ??
+    exp?.manifest?.pairs.find(
+      (p) => p.pair_id === exp.predictions?.[0]?.pair_id,
+    ) ??
     exp?.manifest?.pairs[0];
   const prediction = exp?.predictions?.find((p) => p.pair_id === row?.pair_id);
   const activeVersion = versionId || versions.data?.[0]?.id || "";
@@ -473,7 +475,9 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
               {exp.manifest?.pairs.map((p) => (
                 <option key={p.pair_id} value={p.pair_id}>
                   {p.folder} · {p.pattern_type}
-                  {exp.split?.validation.includes(p.pair_id) ? " · Validation" : " · Train"}
+                  {exp.split?.validation.includes(p.pair_id)
+                    ? " · Validation"
+                    : " · Train"}
                 </option>
               ))}
             </select>

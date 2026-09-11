@@ -1,4 +1,5 @@
 """Local appearance-based cluster proposals; labels are assigned only on explicit apply."""
+
 import hashlib
 import io
 from pathlib import Path
@@ -23,7 +24,7 @@ def appearance_features(content):
             pixels = np.asarray(image.convert("L"), dtype=np.float32)
     small = cv2.resize(pixels, (16, 16), interpolation=cv2.INTER_AREA) / 255
     mean, std = float(small.mean()), float(small.std())
-    structure = (small - mean) / max(std, .05)
+    structure = (small - mean) / max(std, 0.05)
     edges = cv2.magnitude(cv2.Sobel(small, cv2.CV_32F, 1, 0), cv2.Sobel(small, cv2.CV_32F, 0, 1))
     edges = cv2.resize(edges, (8, 8), interpolation=cv2.INTER_AREA)
     return np.concatenate([structure.ravel() / 16, edges.ravel() / 8, [mean, std]]).astype(np.float32)
@@ -81,8 +82,11 @@ def register_group_routes(app, factory, write_lock):
             changed = 0
             for item in data.assignments:
                 pair = pairs[item.id]
-                values = {key: value.strip() for key, value in item.model_dump().items()
-                          if key in {"group_key", "class_label"} and value is not None}
+                values = {
+                    key: value.strip()
+                    for key, value in item.model_dump().items()
+                    if key in {"group_key", "class_label"} and value is not None
+                }
                 if any(getattr(pair, key) != value for key, value in values.items()):
                     for key, value in values.items():
                         setattr(pair, key, value)
@@ -111,22 +115,36 @@ def register_group_routes(app, factory, write_lock):
                     content = path.read_bytes()
                     if hashlib.sha256(content).hexdigest() != record.file_hash:
                         raise ValueError("원본 변경: 폴더 재검색 필요")
-                    cleanup = db.scalar(select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True)))
+                    cleanup = db.scalar(
+                        select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True))
+                    )
                     if cleanup:
                         path = Path(cleanup.clean_path).resolve()
-                        if cleanup.source_hash != record.file_hash or not path.is_relative_to(app.state.state_dir.resolve() / "clean"):
+                        if cleanup.source_hash != record.file_hash or not path.is_relative_to(
+                            app.state.state_dir.resolve() / "clean"
+                        ):
                             raise ValueError("Clean 원본/경로 불일치")
                         content = path.read_bytes()
                         if hashlib.sha256(content).hexdigest() != cleanup.clean_hash:
                             raise ValueError("Clean 캐시 변경")
                     features.append(appearance_features(content))
-                    accepted.append({"id": pair.id, "revision": pair.revision, "folder": pair.folder,
-                                     "image_source": "clean" if cleanup else "original"})
+                    accepted.append(
+                        {
+                            "id": pair.id,
+                            "revision": pair.revision,
+                            "folder": pair.folder,
+                            "image_source": "clean" if cleanup else "original",
+                        }
+                    )
                 except (OSError, ValueError, Image.DecompressionBombError) as exc:
                     skipped.append({"id": pair.id, "folder": pair.folder, "reason": str(exc)})
             if len(accepted) < 2:
                 raise HTTPException(422, "사용 가능한 이미지가 2개 이상 필요합니다.")
             labels = cluster_features(features, min(data.clusters, len(features)))
-            return {"algorithm": "appearance-kmeans-v1", "role": data.role,
-                    "clusters": len(set(labels)), "skipped": skipped,
-                    "assignments": [{**pair, "cluster": label} for pair, label in zip(accepted, labels)]}
+            return {
+                "algorithm": "appearance-kmeans-v1",
+                "role": data.role,
+                "clusters": len(set(labels)),
+                "skipped": skipped,
+                "assignments": [{**pair, "cluster": label} for pair, label in zip(accepted, labels, strict=True)],
+            }

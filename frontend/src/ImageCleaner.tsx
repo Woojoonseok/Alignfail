@@ -78,7 +78,13 @@ export default function ImageCleaner({
     if (!viewport) return;
     const observer = new ResizeObserver(() => updateFitWidth());
     function updateFitWidth() {
-      if (viewport) setFitWidth(Math.min(viewport.clientWidth, viewport.clientHeight * width / height));
+      if (viewport)
+        setFitWidth(
+          Math.min(
+            viewport.clientWidth,
+            (viewport.clientHeight * width) / height,
+          ),
+        );
     }
     observer.observe(viewport);
     updateFitWidth();
@@ -358,7 +364,9 @@ export default function ImageCleaner({
                 {preview ? (
                   <div
                     className="cleanup-stage"
-                    style={{ width: fitWidth ? `${fitWidth * zoom}px` : "100%" }}
+                    style={{
+                      width: fitWidth ? `${fitWidth * zoom}px` : "100%",
+                    }}
                   >
                     <img
                       src={preview.preview_url}

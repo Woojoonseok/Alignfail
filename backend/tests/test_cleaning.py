@@ -5,28 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 from PIL import Image
+from support import marked_image
 
 from app.cleaning import clean_pixels, create_masks, detect_markings, png_bytes
-from app.main import create_app
 from app.schemas import CleanupInput
-
-
-def marked_image(box=False, cross=False, rgb=False):
-    rng = np.random.default_rng(5)
-    pixels = np.clip(rng.normal(85, 12, (160, 192)), 0, 180).astype(np.uint8)
-    if box:
-        pixels[30, 40:151] = 255
-        pixels[125, 40:151] = 255
-        pixels[30:126, 40] = 255
-        pixels[30:126, 150] = 255
-        # Dark sections must still be removed by the full geometric mask.
-        pixels[30, 55:75] = 190
-    if cross:
-        pixels[82:84, :] = 255
-        pixels[:, 95:97] = 255
-    return np.repeat(pixels[:, :, None], 3, axis=2) if rgb else pixels
 
 
 def config(**changes):
@@ -87,27 +70,18 @@ def test_both_markings_can_be_removed_together():
     assert np.percentile(result[mask > 0], 99) < 200
 
 
-@pytest.mark.parametrize("changes", [{}, {"box": {"x0": 4, "y0": 5, "x1": 200, "y1": 80}}, {"box": {"x0": 4, "y0": 5, "x1": 5, "y1": 6}}, {"cross": {"x0": 0, "y0": 0, "x1": 100, "y1": 100}}])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {},
+        {"box": {"x0": 4, "y0": 5, "x1": 200, "y1": 80}},
+        {"box": {"x0": 4, "y0": 5, "x1": 5, "y1": 6}},
+        {"cross": {"x0": 0, "y0": 0, "x1": 100, "y1": 100}},
+    ],
+)
 def test_invalid_removal_regions_are_rejected(changes):
     with pytest.raises(ValueError):
         clean_pixels(marked_image(), config(**changes))
-
-
-@pytest.fixture
-def cleanup_client(tmp_path):
-    root = tmp_path / "Dada"
-    folder = root / "pair_a"
-    folder.mkdir(parents=True)
-    (folder / "image_REF.png").write_bytes(png_bytes(marked_image(box=True)))
-    (folder / "image.png").write_bytes(png_bytes(marked_image(cross=True)))
-    app = create_app(tmp_path / "state")
-    with TestClient(app) as client:
-        pid = client.post("/api/projects", json={"name": "Cleaning test"}).json()["id"]
-        assert client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)}).status_code == 200
-        pair = client.get(f"/api/projects/{pid}/pairs").json()[0]
-        pair = client.put(f"/api/pairs/{pair['id']}", json={"revision": pair["revision"], "gt_x": 70, "gt_y": 60}).json()
-        yield client, pid, pair, folder
-    app.state.engine.dispose()
 
 
 def test_preview_save_reset_and_snapshot_keep_original_and_gt(cleanup_client):
@@ -131,7 +105,10 @@ def test_preview_save_reset_and_snapshot_keep_original_and_gt(cleanup_client):
     assert after["query"]["cleanup"]["id"] == cid
     version = client.post(f"/api/projects/{pid}/versions", json={"description": "cleaned"}).json()
     assert "id" in version
-    assert client.post(f"/api/images/{image['id']}/clean/reset", json={"source_hash": image["file_hash"]}).status_code == 200
+    assert (
+        client.post(f"/api/images/{image['id']}/clean/reset", json={"source_hash": image["file_hash"]}).status_code
+        == 200
+    )
     assert client.get(f"/api/projects/{pid}/pairs").json()[0]["query"]["cleanup"] is None
     manifest = client.get(f"/api/versions/{version['id']}/manifest").json()
     assert manifest["pairs"][0]["query"]["cleanup"]["id"] == cid

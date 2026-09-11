@@ -302,7 +302,10 @@ export default function BatchTools({
             >
               검색 결과 전체 선택 ({filtered.length})
             </button>
-            <button className="button secondary small" onClick={() => selection(new Set())}>
+            <button
+              className="button secondary small"
+              onClick={() => selection(new Set())}
+            >
               선택 해제
             </button>
             <strong>{chosen.length}개 선택</strong>
@@ -515,8 +518,31 @@ export default function BatchTools({
                                     />
                                   )}
                                   <figcaption>{p.folder}</figcaption>
-                                  <select aria-label={`${p.folder} 후보 그룹`} value={item.cluster} onChange={e => setProposal({...proposal, assignments: proposal.assignments.map(a => a.id === item.id ? {...a, cluster:Number(e.target.value)} : a)})}>
-                                    {Object.keys(names).map(key => <option key={key} value={key}>그룹 {key}</option>)}
+                                  <select
+                                    aria-label={`${p.folder} 후보 그룹`}
+                                    value={item.cluster}
+                                    onChange={(e) =>
+                                      setProposal({
+                                        ...proposal,
+                                        assignments: proposal.assignments.map(
+                                          (a) =>
+                                            a.id === item.id
+                                              ? {
+                                                  ...a,
+                                                  cluster: Number(
+                                                    e.target.value,
+                                                  ),
+                                                }
+                                              : a,
+                                        ),
+                                      })
+                                    }
+                                  >
+                                    {Object.keys(names).map((key) => (
+                                      <option key={key} value={key}>
+                                        그룹 {key}
+                                      </option>
+                                    ))}
                                   </select>
                                 </figure>
                               );

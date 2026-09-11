@@ -65,8 +65,13 @@ def import_directory(db, project, root: Path):
             key = str(path.resolve())
             record = images.get(key)
             if record is None:
-                record = ImageRecord(project_id=project.id, folder=folder.name, file_path=key, file_name=path.name,
-                                     role="REF" if "ref" in path.name.lower() else "QUERY")
+                record = ImageRecord(
+                    project_id=project.id,
+                    folder=folder.name,
+                    file_path=key,
+                    file_name=path.name,
+                    role="REF" if "ref" in path.name.lower() else "QUERY",
+                )
                 db.add(record)
                 db.flush()
                 images[key] = record
@@ -107,22 +112,73 @@ def active_cleanup(db, image_id):
 def image_dict(db, image):
     if image is None:
         return None
-    result = {key: getattr(image, key) for key in ["id", "file_name", "file_path", "role", "file_hash", "width", "height", "mode", "error"]}
-    clean = active_cleanup(db, image.id)
-    result["cleanup"] = None if clean is None else {
-        **{key: getattr(clean, key) for key in ["id", "source_hash", "clean_path", "clean_hash", "mask_path", "mask_hash", "config", "created_at"]},
-        "stale": clean.source_hash != image.file_hash,
+    result = {
+        key: getattr(image, key)
+        for key in ["id", "file_name", "file_path", "role", "file_hash", "width", "height", "mode", "error"]
     }
+    clean = active_cleanup(db, image.id)
+    result["cleanup"] = (
+        None
+        if clean is None
+        else {
+            **{
+                key: getattr(clean, key)
+                for key in [
+                    "id",
+                    "source_hash",
+                    "clean_path",
+                    "clean_hash",
+                    "mask_path",
+                    "mask_hash",
+                    "config",
+                    "created_at",
+                ]
+            },
+            "stale": clean.source_hash != image.file_hash,
+        }
+    )
     return result
 
 
 def pair_dict(db, pair):
-    result = {key: getattr(pair, key) for key in ["id", "project_id", "folder", "gt_x", "gt_y", "gt_source", "group_key", "class_label", "tier", "notes", "enabled", "exclude_reason", "import_issues", "revision", "updated_at"]}
-    result["reference"] = image_dict(db, db.get(ImageRecord, pair.reference_image_id)) if pair.reference_image_id else None
+    result = {
+        key: getattr(pair, key)
+        for key in [
+            "id",
+            "project_id",
+            "folder",
+            "gt_x",
+            "gt_y",
+            "gt_source",
+            "group_key",
+            "class_label",
+            "tier",
+            "notes",
+            "enabled",
+            "exclude_reason",
+            "import_issues",
+            "revision",
+            "updated_at",
+        ]
+    }
+    result["reference"] = (
+        image_dict(db, db.get(ImageRecord, pair.reference_image_id)) if pair.reference_image_id else None
+    )
     result["query"] = image_dict(db, db.get(ImageRecord, pair.query_image_id)) if pair.query_image_id else None
     result["pattern_type"] = pair.pattern_type
-    annotation = db.scalar(select(ReferenceAnnotation).where(ReferenceAnnotation.pair_id == pair.id).order_by(ReferenceAnnotation.revision.desc()))
-    result["reference_annotation"] = None if not annotation else {key:getattr(annotation,key) for key in ["id","image_hash","box","center","source","revision","created_at"]}
+    annotation = db.scalar(
+        select(ReferenceAnnotation)
+        .where(ReferenceAnnotation.pair_id == pair.id)
+        .order_by(ReferenceAnnotation.revision.desc())
+    )
+    result["reference_annotation"] = (
+        None
+        if not annotation
+        else {
+            key: getattr(annotation, key)
+            for key in ["id", "image_hash", "box", "center", "source", "revision", "created_at"]
+        }
+    )
     return result
 
 
@@ -133,8 +189,15 @@ def audit_dataset(db, project_id):
     checked = {}
 
     def add(pair, code, message, severity="error"):
-        issues.append({"pair_id": pair.id, "folder": pair.folder, "code": code, "message": message,
-                       "severity": severity if pair.enabled else "warning"})
+        issues.append(
+            {
+                "pair_id": pair.id,
+                "folder": pair.folder,
+                "code": code,
+                "message": message,
+                "severity": severity if pair.enabled else "warning",
+            }
+        )
 
     for pair in pairs:
         for issue in pair.import_issues:
@@ -155,20 +218,35 @@ def audit_dataset(db, project_id):
             clean = active_cleanup(db, image.id)
             if clean:
                 if clean.source_hash != current["file_hash"]:
-                    add(pair, "STALE_CLEAN", f"{role}: 원본이 변경되어 표시 제거를 다시 실행하거나 원본 사용으로 되돌려야 합니다.")
+                    add(
+                        pair,
+                        "STALE_CLEAN",
+                        f"{role}: 원본이 변경되어 표시 제거를 다시 실행하거나 원본 사용으로 되돌려야 합니다.",
+                    )
                 for field in ["clean", "mask"]:
                     try:
                         valid = digest(Path(getattr(clean, f"{field}_path"))) == getattr(clean, f"{field}_hash")
                     except OSError:
                         valid = False
                     if not valid:
-                        add(pair, "BROKEN_CLEAN", f"{role}: {field} 캐시가 없거나 변경되었습니다. 표시 제거를 다시 실행하세요.")
+                        add(
+                            pair,
+                            "BROKEN_CLEAN",
+                            f"{role}: {field} 캐시가 없거나 변경되었습니다. 표시 제거를 다시 실행하세요.",
+                        )
             if pair.enabled and current["file_hash"]:
-                hashes[current["file_hash"]].append({"pair_id": pair.id, "folder": pair.folder, "role": role, "group_key": pair.group_key})
+                hashes[current["file_hash"]].append(
+                    {"pair_id": pair.id, "folder": pair.folder, "role": role, "group_key": pair.group_key}
+                )
         query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
         if pair.gt_x is None or pair.gt_y is None:
             add(pair, "MISSING_GT", "Query GT를 지정하세요.")
-        elif query and query.width and query.height and not (0 <= pair.gt_x < query.width and 0 <= pair.gt_y < query.height):
+        elif (
+            query
+            and query.width
+            and query.height
+            and not (0 <= pair.gt_x < query.width and 0 <= pair.gt_y < query.height)
+        ):
             add(pair, "INVALID_GT", "GT가 원본 이미지 범위를 벗어났습니다.")
         if pair.enabled and not pair.group_key:
             add(pair, "GROUP_UNASSIGNED", "데이터 그룹 미지정: Split 생성 전에 연관 Pair를 묶어야 합니다.", "warning")
@@ -182,7 +260,14 @@ def audit_dataset(db, project_id):
             add(pair, "DUPLICATE_FILE", f"동일 파일 {len(occurrences)}건: 촬영 출처와 그룹을 확인하세요.", "warning")
     enabled = sum(p.enabled for p in pairs)
     errors = sum(i["severity"] == "error" for i in issues)
-    return {"checked_at": now(), "pair_count": len(pairs), "enabled_count": enabled,
-            "errors": errors, "warnings": len(issues) - errors, "passed": errors == 0 and enabled > 0,
-            "issues": issues, "duplicates": duplicates,
-            "scope": "파일·Pair·GT 검사입니다. Split 간 누수 검사는 아직 수행하지 않습니다."}
+    return {
+        "checked_at": now(),
+        "pair_count": len(pairs),
+        "enabled_count": enabled,
+        "errors": errors,
+        "warnings": len(issues) - errors,
+        "passed": errors == 0 and enabled > 0,
+        "issues": issues,
+        "duplicates": duplicates,
+        "scope": "파일·Pair·GT 검사입니다. Split 간 누수 검사는 아직 수행하지 않습니다.",
+    }

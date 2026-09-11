@@ -47,8 +47,11 @@ def register_cleanup_routes(app, factory, write_lock):
 
     def update_pairs(db, image_id):
         # Changing the displayed clean image must invalidate stale editor revisions.
-        db.execute(update(Pair).where(or_(Pair.reference_image_id == image_id, Pair.query_image_id == image_id))
-                   .values(revision=Pair.revision + 1, updated_at=now()))
+        db.execute(
+            update(Pair)
+            .where(or_(Pair.reference_image_id == image_id, Pair.query_image_id == image_id))
+            .values(revision=Pair.revision + 1, updated_at=now())
+        )
 
     @app.get("/api/images/{image_id}/clean/detect")
     def detect(image_id: str, db=Depends(session)):
@@ -58,8 +61,11 @@ def register_cleanup_routes(app, factory, write_lock):
     @app.post("/api/images/{image_id}/clean/preview")
     def preview(image_id: str, config: CleanupInput, db=Depends(session)):
         _, clean, mask, info = render(db, image_id, config)
-        return {"preview_url": "data:image/png;base64," + base64.b64encode(clean).decode(),
-                "mask_url": "data:image/png;base64," + base64.b64encode(mask).decode(), "info": info}
+        return {
+            "preview_url": "data:image/png;base64," + base64.b64encode(clean).decode(),
+            "mask_url": "data:image/png;base64," + base64.b64encode(mask).decode(),
+            "info": info,
+        }
 
     @app.post("/api/images/{image_id}/clean", status_code=201)
     def save(image_id: str, config: CleanupInput, db=Depends(session)):
@@ -72,11 +78,20 @@ def register_cleanup_routes(app, factory, write_lock):
                 (directory / "clean.png").write_bytes(clean)
                 (directory / "mask.png").write_bytes(mask)
             except OSError as exc:
-                raise HTTPException(500, "정리된 이미지 저장에 실패했습니다. 저장 공간과 쓰기 권한을 확인하세요.") from exc
+                raise HTTPException(
+                    500, "정리된 이미지 저장에 실패했습니다. 저장 공간과 쓰기 권한을 확인하세요."
+                ) from exc
             db.execute(update(ImageCleanup).where(ImageCleanup.image_id == image_id).values(active=False))
-            result = ImageCleanup(id=cleanup_id, image_id=image_id, source_hash=record.file_hash, config=info,
-                                  clean_path=str(directory / "clean.png"), clean_hash=hashlib.sha256(clean).hexdigest(),
-                                  mask_path=str(directory / "mask.png"), mask_hash=hashlib.sha256(mask).hexdigest())
+            result = ImageCleanup(
+                id=cleanup_id,
+                image_id=image_id,
+                source_hash=record.file_hash,
+                config=info,
+                clean_path=str(directory / "clean.png"),
+                clean_hash=hashlib.sha256(clean).hexdigest(),
+                mask_path=str(directory / "mask.png"),
+                mask_hash=hashlib.sha256(mask).hexdigest(),
+            )
             db.add(result)
             update_pairs(db, image_id)
             db.commit()
@@ -88,13 +103,17 @@ def register_cleanup_routes(app, factory, write_lock):
             if not config.box and not config.cross:
                 raise HTTPException(422, "제거할 표시를 선택하세요.")
             record, pixels = read_image(db, image_id, config.source_hash)
-            existing = db.scalar(select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True)))
+            existing = db.scalar(
+                select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True))
+            )
             if existing and not config.replace_existing:
                 return {"status": "skipped", "reason": "기존 Clean 유지"}
             detected = detect_markings(pixels)
-            options = CleanupInput(source_hash=record.file_hash,
-                                   box=detected["box"] if config.box else None,
-                                   cross=detected["cross"] if config.cross else None)
+            options = CleanupInput(
+                source_hash=record.file_hash,
+                box=detected["box"] if config.box else None,
+                cross=detected["cross"] if config.cross else None,
+            )
             if options.box is None and options.cross is None:
                 return {"status": "skipped", "reason": "자동 검출 후보 없음 (필요 시 직접 지정)"}
             result = save(image_id, options, db)
