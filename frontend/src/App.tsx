@@ -11,6 +11,7 @@ import {
   Activity,
   ArrowDownToLine,
   ArrowRight,
+  Boxes,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -35,6 +36,7 @@ import { PairExplorer } from "./pages/PairExplorer";
 import { Overview } from "./pages/Overview";
 import { AuditPage } from "./pages/AuditPage";
 import { ClassesPage } from "./pages/ClassesPage";
+import { ModelPage } from "./pages/ModelPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { Workflow } from "./pages/Workflow";
 import { Settings } from "./pages/Settings";
@@ -65,6 +67,11 @@ const PAGES: Record<string, { title: string; description: string }> = {
   "/training": {
     title: "Training",
     description: "입력을 비교하고, 같은 조건에서 모델을 학습·평가하세요.",
+  },
+  "/model": {
+    title: "Model",
+    description:
+      "Encoder 구조와 학습·추론 흐름, 학습된 체크포인트가 보는 것을 확인하세요.",
   },
   "/workflow": {
     title: "Workflow",
@@ -182,6 +189,9 @@ export default function App() {
           <div className="nav-caption">DEVELOPMENT</div>
           <NavLink to="/training">
             <Activity size={18} /> Training
+          </NavLink>
+          <NavLink to="/model">
+            <Boxes size={18} /> Model
           </NavLink>
           <NavLink to="/workflow">
             <GitBranch size={18} /> Step-by-step
@@ -305,6 +315,10 @@ export default function App() {
                 element={
                   <TrainingPage key={project.id} projectId={project.id} />
                 }
+              />
+              <Route
+                path="/model"
+                element={<ModelPage key={project.id} projectId={project.id} />}
               />
               <Route
                 path="/"

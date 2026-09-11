@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Literal
@@ -14,7 +15,7 @@ from training.config import TrainingConfig
 from training.data import load_json, sha, write_json
 
 from .database import session_dependency
-from .experiment_service import ExperimentManager, prepare
+from .experiment_service import ROOT, ExperimentManager, prepare
 from .models import DatasetVersion, ImageRecord, Pair, ReferenceAnnotation, now, uid
 from .schemas import StrictModel
 from .services import pair_dict
@@ -24,6 +25,11 @@ from .storage import digest
 class PrepareInput(StrictModel):
     version_id: str
     config: TrainingConfig = Field(default_factory=TrainingConfig)
+
+
+class VisualizeInput(StrictModel):
+    pair_id: str
+    checkpoint: Literal["best", "last"] = "best"
 
 
 class ReferenceInput(StrictModel):
@@ -181,6 +187,54 @@ def register_training_routes(app, factory, write_lock):
     def stop(experiment_id: str):
         manager.stop(path_for(experiment_id))
         return {"stop_requested": True}
+
+    @app.post("/api/experiments/{experiment_id}/visualize")
+    def visualize(experiment_id: str, data: VisualizeInput):
+        """Run training.visualize in the training Python and return its summary JSON."""
+        path = path_for(experiment_id)
+        if not (path / f"{data.checkpoint}.pt").is_file():
+            raise HTTPException(404, "체크포인트가 없습니다. 학습을 먼저 완료하세요.")
+        if not re.fullmatch(r"[a-f0-9-]{36}", data.pair_id):
+            raise HTTPException(422, "잘못된 Pair id")
+        # Experiments prepared before visualize.py existed have no copy of it; fall back to current code.
+        code = path / "code" if (path / "code" / "training" / "visualize.py").is_file() else ROOT
+        python = os.getenv("ALIGNFAIL_TRAINING_PYTHON", sys.executable)
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        try:
+            result = subprocess.run(
+                [
+                    python,
+                    "-m",
+                    "training.visualize",
+                    "--experiment",
+                    str(path),
+                    "--pair",
+                    data.pair_id,
+                    "--checkpoint",
+                    data.checkpoint,
+                ],
+                cwd=code,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                creationflags=flags,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise HTTPException(500, f"시각화 실행 실패: {type(exc).__name__}") from exc
+        if result.returncode:
+            raise HTTPException(500, "시각화 실패: " + (result.stderr or result.stdout).strip()[-1500:])
+        return load_json(path / "viz" / data.pair_id / "viz.json")
+
+    @app.get("/api/experiments/{experiment_id}/files/viz/{pair_id}/{name}")
+    def visualization_file(experiment_id: str, pair_id: str, name: str):
+        root = path_for(experiment_id)
+        if not (re.fullmatch(r"[a-f0-9-]{36}", pair_id) and re.fullmatch(r"[a-z0-9_]+\.png", name)):
+            raise HTTPException(404, "지원하지 않는 파일")
+        path = root / "viz" / pair_id / name
+        if not path.is_file():
+            raise HTTPException(404, "파일 없음")
+        return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/experiments/{experiment_id}/files/{kind}/{name}")
     def artifact(experiment_id: str, kind: str, name: str):

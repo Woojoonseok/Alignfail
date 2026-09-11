@@ -212,6 +212,16 @@ def test_real_cpu_training_each_crop_mode(training_client, monkeypatch, mode):
         ).status_code
         == 200
     )
+    pair_id = finished["predictions"][0]["pair_id"]
+    viz = client.post(f"/api/experiments/{experiment}/visualize", json={"pair_id": pair_id})
+    assert viz.status_code == 200, viz.text
+    summary = viz.json()
+    assert summary["split"] == "validation" and len(summary["descriptor"]["anchor"]) == 16
+    assert [s["stage"] for s in summary["stages"]] == [1, 2, 3] and summary["stages"][2]["channels"] == 16
+    assert -1 <= summary["cosine"]["anchor_positive"] <= 1
+    for name in ["anchor.png", "conv1_filters.png", "anchor_stage3.png", "positive_stage1.png"]:
+        assert client.get(f"/api/experiments/{experiment}/files/viz/{pair_id}/{name}").status_code == 200
+    assert client.get(f"/api/experiments/{experiment}/files/viz/{pair_id}/../evil.png").status_code in {404, 422}
 
 
 def test_cpu_stop_and_tamper_failure(training_client, monkeypatch):
