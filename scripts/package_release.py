@@ -1,9 +1,13 @@
 """Package source + built UI, excluding all datasets, DBs and platform environments."""
 
+import sys
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+from app import __version__  # noqa: E402
+
 EXCLUDED = {"node_modules", "__pycache__", ".pytest_cache", ".venv"}
 
 
@@ -22,7 +26,7 @@ def main():
             and not EXCLUDED.intersection(p.relative_to(ROOT).parts)
             and p.suffix not in {".pyc", ".tsbuildinfo"}
         )
-    destination = ROOT / "artifacts/alignfail-dataset-studio-v0.2.0.zip"
+    destination = ROOT / f"artifacts/alignfail-dataset-studio-v{__version__}.zip"
     destination.parent.mkdir(exist_ok=True)
     with ZipFile(destination, "w", ZIP_DEFLATED) as bundle:
         for path in sorted(paths):
