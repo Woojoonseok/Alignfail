@@ -2,7 +2,7 @@
 
 회사 Windows + WSL 환경에서 로컬로 실행하는 AlignFail 데이터 검수·학습 도구입니다. Dataset Studio 위에 **Training Studio Phase A–C**를 추가했습니다. 160/256/320/Adaptive crop 진단과 실제 Triplet 학습·Validation 비교를 지원합니다. 회사 실제 데이터 성능은 아직 검증하지 않았습니다.
 
-**학습 설치·사용법:** [TRAINING.md](TRAINING.md). 코드 구조·설계 원칙·미완 항목은 [PROJECT_NOTES.md](PROJECT_NOTES.md). 데이터 검수만 사용할 때는 PyTorch가 필요하지 않습니다.
+**학습 설치·사용법:** [TRAINING.md](TRAINING.md). 코드 구조·설계 원칙·미완 항목은 [PROJECT_NOTES.md](PROJECT_NOTES.md), 모델 구조와 다음 단계는 [MODEL.md](MODEL.md). 데이터 검수만 사용할 때는 PyTorch가 필요하지 않습니다.
 
 ## 현재 지원
 
