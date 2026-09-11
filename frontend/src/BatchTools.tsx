@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, imageUrl, cleanImageUrl, type Pair } from "./api";
+import { api, draftOf, imageUrl, cleanImageUrl, type Pair } from "./api";
 import { useAction, useBeforeUnload } from "./hooks";
 import "./batch.css";
 
@@ -44,6 +44,9 @@ export default function BatchTools({
   const [box, setBox] = useState(true);
   const [cross, setCross] = useState(true);
   const [replace, setReplace] = useState(false);
+  const [markRoi, setMarkRoi] = useState(true);
+  const [markGt, setMarkGt] = useState(true);
+  const [markReplace, setMarkReplace] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
   const [total, setTotal] = useState(0);
   const [field, setField] = useState("group_key");
@@ -138,6 +141,60 @@ export default function BatchTools({
       setMessage(
         `${stop.current ? "중단" : "완료"}: ${processed} / ${unique.length} 이미지 처리. 저장된 결과는 유지됩니다.`,
       );
+    });
+  }
+  async function applyMarkings() {
+    setResults([]);
+    await work(async () => {
+      const response = await api<{
+        results: { folder: string; roi: string; gt: string }[];
+      }>(`/projects/${projectId}/markings/apply`, "POST", {
+        pairs: chosen.map((p) => ({ id: p.id, revision: p.revision })),
+        roi: markRoi,
+        gt: markGt,
+        replace_existing: markReplace,
+      });
+      const label = (v: string) =>
+        v === "saved"
+          ? "저장"
+          : v === "kept"
+            ? "기존 유지"
+            : v === "none"
+              ? "후보 없음"
+              : v === "skipped"
+                ? "건너뜀"
+                : v;
+      setResults(
+        response.results.map((r) => ({
+          name: r.folder,
+          status:
+            r.roi === "saved" || r.gt === "saved"
+              ? "saved"
+              : r.roi.startsWith("error") || r.gt.startsWith("error")
+                ? "failed"
+                : "skipped",
+          reason: `ROI ${label(r.roi)} · GT ${label(r.gt)}`,
+        })),
+      );
+      await refresh();
+      const saved = response.results.filter(
+        (r) => r.roi === "saved" || r.gt === "saved",
+      ).length;
+      setMessage(
+        `${saved} / ${response.results.length} Pair에 표시에서 읽은 ROI·GT를 저장했습니다. 자동 GT는 Pair Explorer에서 확인해야 학습에 사용됩니다.`,
+      );
+    });
+  }
+  async function confirmAutoGt() {
+    const targets = chosen.filter((p) => p.gt_source === "auto_cross");
+    await work(async () => {
+      let done = 0;
+      for (const p of targets) {
+        await api(`/pairs/${p.id}`, "PUT", { ...draftOf(p), confirm_gt: true });
+        done++;
+      }
+      await refresh();
+      setMessage(`${done}개 Pair의 자동 GT를 확인 완료로 표시했습니다.`);
     });
   }
   async function applyGroups() {
@@ -309,6 +366,7 @@ export default function BatchTools({
           <nav className="batch-tabs">
             {[
               ["clean", "흰 표시 일괄 제거"],
+              ["markings", "표시에서 ROI · GT"],
               ["groups", "클래스 · 그룹 지정"],
               ["clusters", "자동 클러스터링"],
             ].map(([id, label]) => (
@@ -367,6 +425,58 @@ export default function BatchTools({
                   onClick={cleanBatch}
                 >
                   선택 Pair 일괄 제거
+                </button>
+              </div>
+            </section>
+          )}
+          {tab === "markings" && (
+            <section className="batch-settings">
+              <p>
+                REF의 흰 네모 중심을 ROI로, Query의 흰 십자선 교차점을 GT로 읽어
+                저장합니다. 십자선에서 온 GT는 "자동 · 확인 필요"로 표시되며,
+                확인 전에는 학습에 사용되지 않습니다. 검출 실패는 결과 상세에
+                표시됩니다.
+              </p>
+              <div className="batch-controls">
+                <label className="batch-check">
+                  <input
+                    type="checkbox"
+                    checked={markRoi}
+                    onChange={(e) => setMarkRoi(e.target.checked)}
+                  />{" "}
+                  REF 네모 → ROI
+                </label>
+                <label className="batch-check">
+                  <input
+                    type="checkbox"
+                    checked={markGt}
+                    onChange={(e) => setMarkGt(e.target.checked)}
+                  />{" "}
+                  Query 십자선 → 자동 GT
+                </label>
+                <label className="batch-check">
+                  <input
+                    type="checkbox"
+                    checked={markReplace}
+                    onChange={(e) => setMarkReplace(e.target.checked)}
+                  />{" "}
+                  기존 ROI·GT도 덮어쓰기
+                </label>
+                <button
+                  className="button primary"
+                  disabled={!chosen.length || (!markRoi && !markGt)}
+                  onClick={applyMarkings}
+                >
+                  선택 {chosen.length}개에서 읽기
+                </button>
+                <button
+                  className="button secondary"
+                  disabled={!chosen.some((p) => p.gt_source === "auto_cross")}
+                  onClick={confirmAutoGt}
+                >
+                  선택 중 자동 GT{" "}
+                  {chosen.filter((p) => p.gt_source === "auto_cross").length}개
+                  확인 완료
                 </button>
               </div>
             </section>

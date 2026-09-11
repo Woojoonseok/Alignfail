@@ -9,6 +9,10 @@ export interface Project {
   annotated_count: number;
   issue_count: number;
   group_count: number;
+  class_count: number;
+  unlinked_count: number;
+  auto_gt_count: number;
+  modalities: { OM: number; SEM: number };
 }
 export interface ImageRecord {
   id: string;
@@ -53,6 +57,9 @@ export interface Pair {
   group_key: string;
   class_label: string;
   pattern_type: "A" | "B" | "unknown";
+  modality: "OM" | "SEM" | "";
+  match_result: "success" | "fail" | "unknown";
+  reference_shared: boolean;
   reference_annotation: {
     id: string;
     image_hash: string;
@@ -79,6 +86,7 @@ export type PairDraft = Pick<
   | "group_key"
   | "class_label"
   | "pattern_type"
+  | "modality"
   | "tier"
   | "notes"
   | "enabled"
@@ -108,6 +116,33 @@ export interface Audit {
       group_key: string;
     }[];
   }[];
+}
+export interface ClassTemplate {
+  class_label: string;
+  image: ImageRecord | null;
+  modality: string;
+  updated_at: string;
+}
+export interface ClassSummary {
+  classes: {
+    class_label: string;
+    count: number;
+    enabled: number;
+    unlinked: number;
+    modalities: { OM: number; SEM: number };
+    template: ClassTemplate | null;
+  }[];
+  unassigned: number;
+  unlinked: number;
+}
+export interface MatchResult {
+  id: string;
+  revision?: number;
+  folder: string;
+  modality?: string;
+  current?: string;
+  error?: string;
+  candidates: { class_label: string; score: number; modality: string }[];
 }
 export interface Version {
   id: string;
@@ -175,6 +210,7 @@ export const draftOf = (pair: Pair): PairDraft => ({
   group_key: pair.group_key,
   class_label: pair.class_label,
   pattern_type: pair.pattern_type,
+  modality: pair.modality,
   tier: pair.tier,
   notes: pair.notes,
   enabled: pair.enabled,

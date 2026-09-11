@@ -74,6 +74,8 @@ def test_import_accepts_loose_queries_and_reads_modality_and_match_result(templa
     assert loose["import_issues"] == [] and loose["match_result"] == "success" and loose["modality"] == "OM"
     assert pairs["e_export_OM.png"]["match_result"] == "fail"
     assert pairs["pair_v_OM"]["reference"] is not None and pairs["pair_v_OM"]["match_result"] == "unknown"
+    # Folder pairs never inherit the export prefix rule, even when the query name starts with s/e.
+    assert pairs["pair_h_OM"]["match_result"] == "unknown"
     audit = client.post(f"/api/projects/{pid}/audit").json()
     codes = {(i["folder"], i["code"], i["severity"]) for i in audit["issues"]}
     assert ("s_export_OM.png", "REF_UNLINKED", "warning") in codes

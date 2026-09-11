@@ -138,7 +138,11 @@ def import_directory(db, project, root: Path):
                 issues.append(f"{record.file_name}: {record.error}")
         if not pair.modality:
             pair.modality = modality_of(name, *(r.file_name for r in refs + queries))
-        pair.match_result = match_result_of(queries[0].file_name) if len(queries) == 1 else "unknown"
+        # The s*/e* convention belongs to production exports, which arrive as loose files; folder
+        # pairs keep "unknown" so a query called sample.png is not mistaken for a success.
+        pair.match_result = (
+            match_result_of(queries[0].file_name) if len(queries) == 1 and not entry.is_dir() else "unknown"
+        )
         current_query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
         if old_query_id != pair.query_image_id or old_hash != (current_query.file_hash if current_query else None):
             clear_gt(db, pair, "QUERY 파일 변경으로 GT 재검토 필요")

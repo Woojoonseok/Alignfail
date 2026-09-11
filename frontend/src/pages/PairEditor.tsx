@@ -77,6 +77,14 @@ export function PairEditor({
       notify(`${pair.folder} · GT와 메타데이터를 저장했습니다.`);
     },
   });
+  const confirm = useMutation({
+    mutationFn: () =>
+      api<Pair>(`/pairs/${pair.id}`, "PUT", { ...draft, confirm_gt: true }),
+    onSuccess: async () => {
+      await refresh();
+      notify(`${pair.folder} · 자동 GT를 확인했습니다.`);
+    },
+  });
   const field = <K extends keyof PairDraft>(key: K, value: PairDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
   return (
@@ -179,7 +187,8 @@ export function PairEditor({
       <div className="viewers">
         <ImageViewer
           image={pair.reference}
-          title="REF"
+          title={pair.reference_shared ? "REF · 템플릿" : "REF"}
+          emptyHint="REF 미연결 · Classes에서 템플릿 클래스에 붙이면 대표 REF가 연결됩니다."
           zoom={refZoom}
           setZoom={setRefZoom}
           showGT={false}
@@ -267,8 +276,27 @@ export function PairEditor({
               <Trash2 size={16} />
             </button>
             <span className="coordinate-source">
-              {draft.gt_x === null ? "위치 미지정" : "● Manual"}
+              {draft.gt_x === null
+                ? "위치 미지정"
+                : pair.gt_source === "auto_cross" && !dirty
+                  ? "● 자동 (십자선)"
+                  : "● Manual"}
             </span>
+            {pair.gt_source === "auto_cross" && !dirty && (
+              <button
+                type="button"
+                className="button secondary small"
+                disabled={confirm.isPending}
+                title="자동 지정된 GT를 검토 완료로 표시합니다. 좌표는 그대로 둡니다."
+                onClick={() => confirm.mutate()}
+              >
+                {confirm.isPending ? (
+                  <Loader2 className="spin" size={14} />
+                ) : (
+                  "자동 GT 확인"
+                )}
+              </button>
+            )}
           </div>
           <section className="panel metadata-panel">
             <div className="metadata-tabs">
@@ -306,6 +334,19 @@ export function PairEditor({
                       ? `중심 ${pair.reference_annotation.center.join(", ")}`
                       : "REF ROI 미지정"}
                   </span>
+                  <label>
+                    Modality
+                    <select
+                      value={draft.modality}
+                      onChange={(e) =>
+                        field("modality", e.target.value as Pair["modality"])
+                      }
+                    >
+                      <option value="">미정</option>
+                      <option value="OM">OM</option>
+                      <option value="SEM">SEM</option>
+                    </select>
+                  </label>
                   <label>
                     Pattern Type
                     <select
