@@ -21,6 +21,7 @@ import {
   type ImageRecord,
   type PixelRect,
 } from "./api";
+import { pixelFromEvent } from "./coords";
 import "./cleaner.css";
 
 type Preview = {
@@ -280,27 +281,8 @@ export default function ImageCleaner({
                     className={mode ? "drawing" : ""}
                     viewBox={`0 0 ${width} ${height}`}
                     onClick={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect();
-                      pick(
-                        Math.max(
-                          0,
-                          Math.min(
-                            width - 1,
-                            Math.round(
-                              ((e.clientX - r.left) / r.width) * width,
-                            ),
-                          ),
-                        ),
-                        Math.max(
-                          0,
-                          Math.min(
-                            height - 1,
-                            Math.round(
-                              ((e.clientY - r.top) / r.height) * height,
-                            ),
-                          ),
-                        ),
-                      );
+                      const { x, y } = pixelFromEvent(e, width, height);
+                      pick(x, y);
                     }}
                   >
                     {showMask && config.box && (

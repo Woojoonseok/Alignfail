@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, imageUrl, cleanImageUrl, type Pair } from "./api";
+import { useAction, useBeforeUnload } from "./hooks";
 import "./batch.css";
 
 type Proposal = {
@@ -37,8 +38,7 @@ export default function BatchTools({
   const [includeExcluded, setIncludeExcluded] = useState(false);
   const [page, setPage] = useState(0);
   const [tab, setTab] = useState("clean");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const { busy, error, run } = useAction();
   const [message, setMessage] = useState("");
   const [role, setRole] = useState("both");
   const [box, setBox] = useState(true);
@@ -80,31 +80,14 @@ export default function BatchTools({
     onBusy(busy);
     return () => onBusy(false);
   }, [busy, onBusy]);
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (busy) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [busy]);
+  useBeforeUnload(busy);
   function selection(ids: Set<string>) {
     setSelected(ids);
     setProposal(null);
   }
   async function work(action: () => Promise<void>) {
-    setBusy(true);
-    setError("");
     setMessage("");
-    try {
-      await action();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(action);
   }
   async function cleanBatch() {
     const images = chosen.flatMap((p) =>

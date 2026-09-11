@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Version } from "./api";
+import { useAction } from "./hooks";
 import "./training.css";
 
 type Config = {
@@ -123,8 +124,7 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
   const [versionId, setVersionId] = useState("");
   const [selected, setSelected] = useState("");
   const [pairId, setPairId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const { busy, error, run } = useAction();
   const versions = useQuery({
     queryKey: ["training-versions", projectId],
     queryFn: () => api<Version[]>(`/projects/${projectId}/versions`),
@@ -158,19 +158,12 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
   );
   const field = (key: keyof Config, value: string | number) =>
     setConfig((c) => ({ ...c, [key]: value }));
-  async function action(fn: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
+  const action = (fn: () => Promise<void>) =>
+    run(async () => {
       await fn();
       await experiments.refetch();
       if (selected) await detail.refetch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+    });
   const numeric = (key: keyof Config, label: string, step = 1) => (
     <label key={key}>
       {label}
