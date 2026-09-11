@@ -25,6 +25,7 @@ import {
   Plus,
   Settings2,
   ShieldCheck,
+  Tags,
   X,
 } from "lucide-react";
 import { api, type Pair, type Project } from "./api";
@@ -33,6 +34,7 @@ import { ProjectModal, ImportModal } from "./components/ProjectModals";
 import { PairExplorer } from "./pages/PairExplorer";
 import { Overview } from "./pages/Overview";
 import { AuditPage } from "./pages/AuditPage";
+import { ClassesPage } from "./pages/ClassesPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { Workflow } from "./pages/Workflow";
 import { Settings } from "./pages/Settings";
@@ -46,6 +48,11 @@ const PAGES: Record<string, { title: string; description: string }> = {
   "/pairs": {
     title: "Pair Explorer",
     description: "REF와 Query를 비교하고, 정확한 정답 좌표를 기록하세요.",
+  },
+  "/classes": {
+    title: "Classes",
+    description:
+      "비슷한 Pair를 클래스로 모아 한눈에 보고, 썸네일을 골라 옮기세요.",
   },
   "/audit": {
     title: "Dataset Audit",
@@ -162,6 +169,9 @@ export default function App() {
           <NavLink to="/pairs">
             <Crosshair size={18} /> Pair Explorer{" "}
             {project && <span className="nav-count">{project.pair_count}</span>}
+          </NavLink>
+          <NavLink to="/classes">
+            <Tags size={18} /> Classes
           </NavLink>
           <NavLink to="/audit">
             <ShieldCheck size={18} /> Dataset Audit
@@ -316,6 +326,18 @@ export default function App() {
                     refresh={refresh}
                     notify={setToast}
                     reportDirty={setUnsaved}
+                  />
+                }
+              />
+              <Route
+                path="/classes"
+                element={
+                  <ClassesPage
+                    key={project.id}
+                    project={project}
+                    pairs={pairsQuery.data ?? []}
+                    refresh={refresh}
+                    notify={setToast}
                   />
                 }
               />

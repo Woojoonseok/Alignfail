@@ -49,6 +49,9 @@ export default function BatchTools({
   const [field, setField] = useState("group_key");
   const [value, setValue] = useState("");
   const [clusterRole, setClusterRole] = useState("reference");
+  const [clusterTarget, setClusterTarget] = useState<
+    "group_key" | "class_label"
+  >("group_key");
   const [count, setCount] = useState(Math.max(2, Math.min(8, pairs.length)));
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [names, setNames] = useState<Record<number, string>>({});
@@ -169,7 +172,7 @@ export default function BatchTools({
           role: clusterRole,
         },
       );
-      const prefix = `cluster-${new Date().toISOString().replace(/\D/g, "").slice(0, 17)}`;
+      const prefix = `${clusterTarget === "class_label" ? "class" : "cluster"}-${new Date().toISOString().replace(/\D/g, "").slice(0, 17)}`;
       setNames(
         Object.fromEntries(
           result.assignments.map((p) => [
@@ -194,13 +197,15 @@ export default function BatchTools({
           assignments: proposal.assignments.map((p) => ({
             id: p.id,
             revision: p.revision,
-            group_key: names[p.cluster],
+            [clusterTarget]: names[p.cluster],
           })),
         },
       );
       setProposal(null);
       await refresh();
-      setMessage(`${result.updated}개 Pair에 클러스터 그룹을 적용했습니다.`);
+      setMessage(
+        `${result.updated}개 Pair에 클러스터 결과를 ${clusterTarget === "class_label" ? "클래스" : "그룹"}(으)로 적용했습니다.`,
+      );
     });
   }
   return (
@@ -429,8 +434,23 @@ export default function BatchTools({
                   <option value="reference">REF 기준</option>
                   <option value="query">Query 기준</option>
                 </select>
+                <select
+                  aria-label="클러스터 결과 적용 대상"
+                  value={clusterTarget}
+                  onChange={(e) => {
+                    setClusterTarget(e.target.value as typeof clusterTarget);
+                    setProposal(null);
+                  }}
+                >
+                  <option value="group_key">
+                    데이터 그룹(group_key)으로 적용
+                  </option>
+                  <option value="class_label">
+                    클래스(class_label)로 적용
+                  </option>
+                </select>
                 <label>
-                  그룹 수
+                  묶음 수
                   <input
                     aria-label="클러스터 수"
                     type="number"
@@ -543,7 +563,9 @@ export default function BatchTools({
                     disabled={Object.values(names).some((n) => !n.trim())}
                     onClick={applyClusters}
                   >
-                    검토한 클러스터 그룹 적용
+                    {clusterTarget === "class_label"
+                      ? "검토한 클러스터를 클래스로 적용"
+                      : "검토한 클러스터를 그룹으로 적용"}
                   </button>
                 </div>
               )}

@@ -2576,3 +2576,34 @@ tbody tr:hover {
     margin-left: 5px;
   }
 }
+.pair-list-toggle {
+  margin: 0 13px 8px;
+  font-size: 11px;
+  color: #6f8580;
+}
+.pair-list-section {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 13px;
+  border: 0;
+  border-bottom: 1px solid #eef2ef;
+  background: #f4f8f6;
+  text-align: left;
+  font-size: 11px;
+  color: #4f6b62;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.pair-list-section svg {
+  transition: transform 0.12s;
+}
+.pair-list-section svg.open {
+  transform: rotate(90deg);
+}
+.pair-list-section span {
+  margin-left: auto;
+  color: var(--muted);
+}
