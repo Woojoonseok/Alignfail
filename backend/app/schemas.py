@@ -28,10 +28,13 @@ class PairInput(StrictModel):
     group_key: str = Field(default="", max_length=200)
     class_label: str = Field(default="", max_length=200)
     pattern_type: str = Field(default="unknown", pattern="^(A|B|unknown)$")
+    modality: str = Field(default="", pattern="^(OM|SEM|)$")
     tier: str = Field(default="", max_length=50)
     notes: str = Field(default="", max_length=10000)
     enabled: bool = True
     exclude_reason: str = Field(default="", max_length=2000)
+    # True promotes an automatic (white-cross) GT to a reviewed manual GT without moving it.
+    confirm_gt: bool = False
 
     @model_validator(mode="after")
     def validate_pair(self):
@@ -92,6 +95,27 @@ class GroupAssignment(PairRevision):
 
 class BulkGroupsInput(StrictModel):
     assignments: list[GroupAssignment] = Field(min_length=1, max_length=10000)
+
+
+class ClassTemplateInput(StrictModel):
+    image_id: str
+
+
+class AttachInput(StrictModel):
+    pairs: list[PairRevision] = Field(min_length=1, max_length=10000)
+    class_label: str = Field(min_length=1, max_length=200)
+
+
+class MatchInput(StrictModel):
+    pairs: list[PairRevision] = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+class MarkingsInput(StrictModel):
+    pairs: list[PairRevision] = Field(min_length=1, max_length=2000)
+    roi: bool = True
+    gt: bool = True
+    replace_existing: bool = False
 
 
 class ClusterInput(StrictModel):

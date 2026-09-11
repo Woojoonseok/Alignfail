@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
+from .classes_api import register_class_routes
 from .cleanup_api import register_cleanup_routes
 from .database import create_database, session_dependency
 from .grouping import register_group_routes
@@ -47,6 +48,7 @@ def create_app(state_dir: Path | None = None):
     register_cleanup_routes(app, factory, write_lock)
     register_group_routes(app, factory, write_lock)
     register_training_routes(app, factory, write_lock)
+    register_class_routes(app, factory, write_lock)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_input(_request, exc):
@@ -85,6 +87,10 @@ def create_app(state_dir: Path | None = None):
             "annotated_count": sum(p.enabled and p.gt_x is not None for p in pairs),
             "issue_count": sum(bool(p.import_issues) for p in pairs),
             "group_count": len({p.group_key for p in pairs if p.group_key and p.enabled}),
+            "class_count": len({p.class_label for p in pairs if p.class_label and p.enabled}),
+            "unlinked_count": sum(p.enabled and p.reference_image_id is None for p in pairs),
+            "auto_gt_count": sum(p.enabled and p.gt_source == "auto_cross" for p in pairs),
+            "modalities": {m: sum(p.enabled and p.modality == m for p in pairs) for m in ["OM", "SEM"]},
         }
 
     @app.middleware("http")
@@ -179,11 +185,14 @@ def create_app(state_dir: Path | None = None):
                     raise HTTPException(409, "Query 파일이 변경되었거나 없습니다. 폴더를 재검색하세요.")
             before = gt_value(pair)
             changed_gt = (pair.gt_x, pair.gt_y) != (data.gt_x, data.gt_y)
-            for key, value in data.model_dump(exclude={"revision"}).items():
+            for key, value in data.model_dump(exclude={"revision", "confirm_gt"}).items():
                 setattr(pair, key, value)
             if changed_gt:
                 pair.gt_source = "manual" if pair.gt_x is not None else "none"
                 db.add(GTHistory(pair_id=pair.id, before=before, after=gt_value(pair), reason="사용자 GT 수정"))
+            elif data.confirm_gt and pair.gt_x is not None and pair.gt_source != "manual":
+                pair.gt_source = "manual"
+                db.add(GTHistory(pair_id=pair.id, before=before, after=gt_value(pair), reason="자동 GT 확인"))
             pair.revision += 1
             pair.updated_at = now()
             db.commit()
@@ -335,6 +344,8 @@ def create_app(state_dir: Path | None = None):
                         "gt_source",
                         "group_key",
                         "class_label",
+                        "modality",
+                        "match_result",
                         "pattern_type",
                         "reference_annotation",
                         "tier",

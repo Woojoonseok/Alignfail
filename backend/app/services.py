@@ -1,13 +1,49 @@
+import re
 from collections import defaultdict
 from pathlib import Path
 
+from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
-from .models import GTHistory, ImageRecord, Pair, ReferenceAnnotation, now
+from .models import GTHistory, ImageRecord, Pair, Project, ReferenceAnnotation, now
 from .storage import active_cleanup, digest
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
+# "OM" as its own token in the file name (sample_OM_01, OM-3, om.png); anything else is SEM.
+OM_TOKEN = re.compile(r"(?<![A-Za-z])OM(?![A-Za-z])", re.IGNORECASE)
+
+
+def modality_of(*names: str) -> str:
+    """OM when any given file or folder name carries the OM token, otherwise SEM."""
+    return "OM" if any(OM_TOKEN.search(name) for name in names) else "SEM"
+
+
+def match_result_of(file_name: str) -> str:
+    """Production exports start with s (matched, cross drawn) or e (failed, no cross)."""
+    first = file_name[:1].lower()
+    return {"s": "success", "e": "fail"}.get(first, "unknown")
+
+
+def is_ref(file_name: str) -> bool:
+    return "ref" in file_name.lower()
+
+
+def checked_pairs(db, project_id, requests):
+    """Resolve (id, revision) requests to Pair rows of the project, rejecting stale revisions."""
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+    ids = [item.id for item in requests]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(422, "중복 Pair 지정입니다.")
+    pairs = {p.id: p for p in db.scalars(select(Pair).where(Pair.project_id == project_id, Pair.id.in_(ids)))}
+    for item in requests:
+        if item.id not in pairs:
+            raise HTTPException(404, "프로젝트에 없는 Pair입니다.")
+        if pairs[item.id].revision != item.revision:
+            raise HTTPException(409, "Pair가 변경되었습니다. 새로고침 후 다시 실행하세요.")
+    return project, pairs
 
 
 def inspect_image(path: Path):
@@ -38,13 +74,20 @@ def import_directory(db, project, root: Path):
     images = {i.file_path: i for i in db.scalars(select(ImageRecord).where(ImageRecord.project_id == project.id))}
     pairs = {p.folder: p for p in db.scalars(select(Pair).where(Pair.project_id == project.id))}
     counts = {"new_pairs": 0, "updated_pairs": 0, "images": 0, "invalid_pairs": 0}
-    folders = sorted([p for p in root.iterdir() if p.is_dir() and not p.is_symlink()], key=lambda p: p.name.lower())
+    entries = sorted(
+        [p for p in root.iterdir() if not p.is_symlink() and (p.is_dir() or p.suffix.lower() in IMAGE_SUFFIXES)],
+        key=lambda p: p.name.lower(),
+    )
     seen_folders = set()
-    for folder in folders:
-        seen_folders.add(folder.name)
-        pair = pairs.get(folder.name)
+    for entry in entries:
+        # A sub-folder is one pair (REF + Query); a loose image directly under the root is a
+        # Query-only pair (e.g. production exports that arrive without a REF).
+        name = entry.name
+        files = sorted(p for p in entry.iterdir() if p.is_file()) if entry.is_dir() else [entry]
+        seen_folders.add(name)
+        pair = pairs.get(name)
         if pair is None:
-            pair = Pair(project_id=project.id, folder=folder.name)
+            pair = Pair(project_id=project.id, folder=name)
             db.add(pair)
             db.flush()
             counts["new_pairs"] += 1
@@ -54,18 +97,18 @@ def import_directory(db, project, root: Path):
         old_query = db.get(ImageRecord, old_query_id) if old_query_id else None
         old_hash = old_query.file_hash if old_query else None
         roles = {"REF": [], "QUERY": []}
-        for path in sorted(folder.iterdir()):
-            if not path.is_file() or path.is_symlink() or path.suffix.lower() not in IMAGE_SUFFIXES:
+        for path in files:
+            if path.is_symlink() or path.suffix.lower() not in IMAGE_SUFFIXES:
                 continue
             key = str(path.resolve())
             record = images.get(key)
             if record is None:
                 record = ImageRecord(
                     project_id=project.id,
-                    folder=folder.name,
+                    folder=name,
                     file_path=key,
                     file_name=path.name,
-                    role="REF" if "ref" in path.name.lower() else "QUERY",
+                    role="REF" if entry.is_dir() and is_ref(path.name) else "QUERY",
                 )
                 db.add(record)
                 db.flush()
@@ -75,14 +118,27 @@ def import_directory(db, project, root: Path):
             roles[record.role].append(record)
             counts["images"] += 1
         issues = []
-        for role, attr in [("REF", "reference_image_id"), ("QUERY", "query_image_id")]:
-            found = roles[role]
-            setattr(pair, attr, found[0].id if len(found) == 1 else None)
-            if len(found) != 1:
-                issues.append(f"{role} 이미지가 {len(found)}장입니다. 정확히 1장이 필요합니다.")
-            for record in found:
-                if record.error:
-                    issues.append(f"{record.file_name}: {record.error}")
+        queries = roles["QUERY"]
+        pair.query_image_id = queries[0].id if len(queries) == 1 else None
+        if len(queries) != 1:
+            issues.append(f"QUERY 이미지가 {len(queries)}장입니다. 정확히 1장이 필요합니다.")
+        refs = roles["REF"]
+        if len(refs) == 1:
+            pair.reference_image_id = refs[0].id
+        elif len(refs) > 1:
+            pair.reference_image_id = None
+            issues.append(f"REF 이미지가 {len(refs)}장입니다. 최대 1장이어야 합니다.")
+        else:
+            # No REF of its own: keep a REF linked from a class template, otherwise stay unlinked.
+            linked = db.get(ImageRecord, pair.reference_image_id) if pair.reference_image_id else None
+            if linked is None or linked.folder == name:
+                pair.reference_image_id = None
+        for record in refs + queries:
+            if record.error:
+                issues.append(f"{record.file_name}: {record.error}")
+        if not pair.modality:
+            pair.modality = modality_of(name, *(r.file_name for r in refs + queries))
+        pair.match_result = match_result_of(queries[0].file_name) if len(queries) == 1 else "unknown"
         current_query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
         if old_query_id != pair.query_image_id or old_hash != (current_query.file_hash if current_query else None):
             clear_gt(db, pair, "QUERY 파일 변경으로 GT 재검토 필요")
@@ -143,6 +199,8 @@ def pair_dict(db, pair):
             "gt_source",
             "group_key",
             "class_label",
+            "modality",
+            "match_result",
             "tier",
             "notes",
             "enabled",
@@ -157,6 +215,9 @@ def pair_dict(db, pair):
     )
     result["query"] = image_dict(db, db.get(ImageRecord, pair.query_image_id)) if pair.query_image_id else None
     result["pattern_type"] = pair.pattern_type
+    reference = db.get(ImageRecord, pair.reference_image_id) if pair.reference_image_id else None
+    # True when the REF comes from a class template rather than this pair's own folder.
+    result["reference_shared"] = bool(reference and reference.folder != pair.folder)
     annotation = db.scalar(
         select(ReferenceAnnotation)
         .where(ReferenceAnnotation.pair_id == pair.id)
@@ -195,7 +256,14 @@ def audit_dataset(db, project_id):
             add(pair, "INVALID_PAIR", issue)
         for role, image_id in [("REF", pair.reference_image_id), ("QUERY", pair.query_image_id)]:
             if not image_id:
-                if not pair.import_issues:
+                if role == "REF":
+                    add(
+                        pair,
+                        "REF_UNLINKED",
+                        "REF가 없습니다. Classes에서 템플릿 클래스에 붙이면 대표 REF가 연결됩니다.",
+                        "warning",
+                    )
+                elif not pair.import_issues:
                     add(pair, "MISSING_IMAGE", f"{role} 이미지가 없습니다.")
                 continue
             image = db.get(ImageRecord, image_id)
@@ -241,6 +309,10 @@ def audit_dataset(db, project_id):
             add(pair, "INVALID_GT", "GT가 원본 이미지 범위를 벗어났습니다.")
         if pair.enabled and not pair.group_key:
             add(pair, "GROUP_UNASSIGNED", "데이터 그룹 미지정: Split 생성 전에 연관 Pair를 묶어야 합니다.", "warning")
+        if pair.enabled and pair.gt_source == "auto_cross":
+            add(
+                pair, "AUTO_GT_UNCONFIRMED", "흰 십자선에서 자동 지정한 GT입니다. 확인 후 학습에 사용하세요.", "warning"
+            )
     duplicates = []
     for file_hash, occurrences in hashes.items():
         if len(occurrences) < 2:

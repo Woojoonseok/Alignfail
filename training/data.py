@@ -120,10 +120,15 @@ def metrics(rows):
             **{f"acc@{k}": sum(e <= k for e in errors) / len(errors) if errors else None for k in [5, 10, 20]},
         }
 
-    return {
+    result = {
         "Overall": aggregate(rows),
         **{p: aggregate([r for r in rows if r["pattern_type"] == p]) for p in ["A", "B", "unknown"]},
     }
+    # Optional breakdowns: modality (OM/SEM) and the production system's own match result.
+    for key, prefix in [("modality", ""), ("match_result", "match:")]:
+        for value in sorted({r.get(key, "") for r in rows} - {"", "unknown"}):
+            result[f"{prefix}{value}"] = aggregate([r for r in rows if r.get(key) == value])
+    return result
 
 
 def load_json(path):

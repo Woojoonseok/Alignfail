@@ -7,11 +7,11 @@ import cv2
 import numpy as np
 from fastapi import Depends, HTTPException
 from PIL import Image
-from sqlalchemy import select
 
 from .database import session_dependency
-from .models import ImageRecord, Pair, Project, now
+from .models import ImageRecord, now
 from .schemas import BulkGroupsInput, ClusterInput
+from .services import checked_pairs
 from .storage import HIGH_DEPTH_MODES, active_cleanup, inside, sha
 
 
@@ -58,21 +58,6 @@ def cluster_features(features, count):
 
 def register_group_routes(app, factory, write_lock):
     session = session_dependency(factory)
-
-    def checked_pairs(db, project_id, requests):
-        project = db.get(Project, project_id)
-        if not project:
-            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
-        ids = [item.id for item in requests]
-        if len(set(ids)) != len(ids):
-            raise HTTPException(422, "중복 Pair 지정입니다.")
-        pairs = {p.id: p for p in db.scalars(select(Pair).where(Pair.project_id == project_id, Pair.id.in_(ids)))}
-        for item in requests:
-            if item.id not in pairs:
-                raise HTTPException(404, "프로젝트에 없는 Pair입니다.")
-            if pairs[item.id].revision != item.revision:
-                raise HTTPException(409, "Pair가 변경되었습니다. 새로고침 후 다시 실행하세요.")
-        return project, pairs
 
     @app.post("/api/projects/{project_id}/groups/bulk")
     def bulk_groups(project_id: str, data: BulkGroupsInput, db=Depends(session)):

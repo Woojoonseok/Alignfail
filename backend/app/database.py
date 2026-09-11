@@ -25,9 +25,16 @@ def create_database(state_dir: Path):
     if "pattern_type" not in {c["name"] for c in inspect(engine).get_columns("pairs")}:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE pairs ADD COLUMN pattern_type VARCHAR(10) NOT NULL DEFAULT 'unknown'"))
-    if "class_label" not in {c["name"] for c in inspect(engine).get_columns("pairs")}:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE pairs ADD COLUMN class_label VARCHAR(200) NOT NULL DEFAULT ''"))
+    columns = {c["name"] for c in inspect(engine).get_columns("pairs")}
+    additions = {
+        "class_label": "VARCHAR(200) NOT NULL DEFAULT ''",
+        "modality": "VARCHAR(10) NOT NULL DEFAULT ''",
+        "match_result": "VARCHAR(10) NOT NULL DEFAULT 'unknown'",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            with engine.begin() as connection:
+                connection.execute(text(f"ALTER TABLE pairs ADD COLUMN {name} {definition}"))
     return engine, sessionmaker(engine, expire_on_commit=False)
 
 
