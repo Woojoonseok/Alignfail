@@ -1260,7 +1260,12 @@ tbody tr:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 3px 0 15px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #f5f7f8;
 }
 .pair-detail-heading > div:first-child {
   display: flex;
@@ -1284,7 +1289,7 @@ tbody tr:hover {
 .pair-navigation {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
   color: #9caaa6;
   font-size: 10px;
   white-space: nowrap;
@@ -1380,9 +1385,10 @@ tbody tr:hover {
   color: #679976;
 }
 .image-viewport {
+  --viewport-h: clamp(300px, 36vw, 620px);
   background: #1e272c;
   overflow: auto;
-  height: clamp(260px, 30vw, 480px);
+  height: var(--viewport-h);
   position: relative;
   scrollbar-width: thin;
   scrollbar-color: #5b6865 #263130;
@@ -1400,6 +1406,24 @@ tbody tr:hover {
   display: block;
   user-select: none;
   image-orientation: none;
+}
+/* At 100% the whole image is visible: no scrollbars, centred, aspect kept. */
+.image-viewport.fit {
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-stage.fit {
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+}
+.image-stage.fit > img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: var(--viewport-h);
 }
 .image-overlay {
   position: absolute;

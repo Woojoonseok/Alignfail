@@ -53,6 +53,17 @@ export function PairEditor({
   const [roiOpen, setRoiOpen] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(pair));
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  // Ctrl+S / Cmd+S saves the current draft without reaching for the button.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (dirty && !save.isPending) save.mutate();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
   const history = useQuery({
     queryKey: ["history", pair.id],
     queryFn: () => api<History[]>(`/pairs/${pair.id}/history`),
@@ -103,6 +114,28 @@ export function PairEditor({
           {dirty && <span className="unsaved">저장하지 않은 변경</span>}
         </div>
         <div className="pair-navigation">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={!dirty || save.isPending}
+            onClick={() => setDraft(draftOf(pair))}
+          >
+            <Undo2 size={15} /> 되돌리기
+          </button>
+          <button
+            type="submit"
+            form="pair-editor-form"
+            className="button primary"
+            disabled={!dirty || save.isPending}
+            title="Ctrl+S"
+          >
+            {save.isPending ? (
+              <Loader2 className="spin" size={16} />
+            ) : (
+              <Save size={16} />
+            )}{" "}
+            변경 저장
+          </button>
           <span>{position}</span>
           <button
             className="icon-button"
@@ -174,6 +207,7 @@ export function PairEditor({
         />
       </div>
       <form
+        id="pair-editor-form"
         onSubmit={(e) => {
           e.preventDefault();
           save.mutate();
@@ -388,28 +422,9 @@ export function PairEditor({
           <div className="save-bar">
             <span>
               {dirty
-                ? "변경 사항을 저장하면 GT 이력에 기록됩니다."
+                ? "변경 사항은 위쪽 '변경 저장' 또는 Ctrl+S로 저장하며 GT 이력에 기록됩니다."
                 : "저장된 최신 데이터입니다."}
             </span>
-            <button
-              type="button"
-              className="button secondary"
-              disabled={!dirty}
-              onClick={() => setDraft(draftOf(pair))}
-            >
-              <Undo2 size={15} /> 되돌리기
-            </button>
-            <button
-              className="button primary"
-              disabled={!dirty || save.isPending}
-            >
-              {save.isPending ? (
-                <Loader2 className="spin" size={16} />
-              ) : (
-                <Save size={16} />
-              )}{" "}
-              변경 저장
-            </button>
           </div>
         </fieldset>
       </form>
