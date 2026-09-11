@@ -9,21 +9,11 @@ from pathlib import Path
 
 import cv2
 
-from training.data import MODES, crop, crop_spec, diagnostics, group_split, read_image, sha
+from training.data import MODES, crop, crop_spec, diagnostics, group_split, load_json, read_image, sha, write_json
 
 from .models import now
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def write_json(path, value):
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
-    temp.replace(path)
-
-
-def load_json(path):
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def prepare(version, config, directory):

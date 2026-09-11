@@ -124,3 +124,15 @@ def metrics(rows):
         "Overall": aggregate(rows),
         **{p: aggregate([r for r in rows if r["pattern_type"] == p]) for p in ["A", "B", "unknown"]},
     }
+
+
+def load_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def write_json(path, value):
+    """Atomic JSON write: the file is replaced only after the full document is on disk."""
+    path = Path(path)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    temp.replace(path)

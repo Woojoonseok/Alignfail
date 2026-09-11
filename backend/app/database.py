@@ -29,3 +29,13 @@ def create_database(state_dir: Path):
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE pairs ADD COLUMN class_label VARCHAR(200) NOT NULL DEFAULT ''"))
     return engine, sessionmaker(engine, expire_on_commit=False)
+
+
+def session_dependency(factory):
+    """FastAPI dependency yielding one ORM session per request."""
+
+    def session():
+        with factory() as db:
+            yield db
+
+    return session

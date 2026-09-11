@@ -1,36 +1,35 @@
 import base64
-import hashlib
 from pathlib import Path
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 from PIL import Image
-from sqlalchemy import or_, select, update
+from sqlalchemy import or_, update
 
 from .cleaning import clean_pixels, detect_markings, load_pixels
+from .database import session_dependency
 from .models import ImageCleanup, ImageRecord, Pair, Project, now, uid
 from .schemas import AutoCleanupInput, CleanupInput, CleanupSource
+from .storage import HashMismatch, active_cleanup, digest, inside, read_verified, sha
 
 
 def register_cleanup_routes(app, factory, write_lock):
-    def session():
-        with factory() as db:
-            yield db
+    session = session_dependency(factory)
 
     def read_image(db, image_id, expected_hash=None):
         record = db.get(ImageRecord, image_id)
         if not record:
             raise HTTPException(404, "이미지를 찾을 수 없습니다.")
         project = db.get(Project, record.project_id)
-        path = Path(record.file_path).resolve()
-        if not path.is_relative_to(Path(project.root_directory).resolve()):
+        if not inside(record.file_path, project.root_directory):
             raise HTTPException(403, "데이터 폴더 외부 이미지는 처리하지 않습니다.")
         try:
-            content = path.read_bytes()
+            content = read_verified(record.file_path, record.file_hash)
+        except HashMismatch as exc:
+            raise HTTPException(409, "원본 이미지가 변경되었습니다. 폴더를 재검색한 뒤 다시 처리하세요.") from exc
         except OSError as exc:
             raise HTTPException(422, "원본 이미지를 읽을 수 없습니다.") from exc
-        current_hash = hashlib.sha256(content).hexdigest()
-        if current_hash != record.file_hash or (expected_hash and expected_hash != current_hash):
+        if expected_hash and expected_hash != record.file_hash:
             raise HTTPException(409, "원본 이미지가 변경되었습니다. 폴더를 재검색한 뒤 다시 처리하세요.")
         try:
             return record, load_pixels(content)
@@ -88,9 +87,9 @@ def register_cleanup_routes(app, factory, write_lock):
                 source_hash=record.file_hash,
                 config=info,
                 clean_path=str(directory / "clean.png"),
-                clean_hash=hashlib.sha256(clean).hexdigest(),
+                clean_hash=sha(clean),
                 mask_path=str(directory / "mask.png"),
-                mask_hash=hashlib.sha256(mask).hexdigest(),
+                mask_hash=sha(mask),
             )
             db.add(result)
             update_pairs(db, image_id)
@@ -103,9 +102,7 @@ def register_cleanup_routes(app, factory, write_lock):
             if not config.box and not config.cross:
                 raise HTTPException(422, "제거할 표시를 선택하세요.")
             record, pixels = read_image(db, image_id, config.source_hash)
-            existing = db.scalar(
-                select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True))
-            )
+            existing = active_cleanup(db, image_id)
             if existing and not config.replace_existing:
                 return {"status": "skipped", "reason": "기존 Clean 유지"}
             detected = detect_markings(pixels)
@@ -141,7 +138,7 @@ def register_cleanup_routes(app, factory, write_lock):
         if not path.is_relative_to(app.state.state_dir.resolve() / "clean"):
             raise HTTPException(403, "잘못된 캐시 경로입니다.")
         try:
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            actual = digest(path)
         except OSError as exc:
             raise HTTPException(404, "저장된 캐시가 없습니다. 표시 제거를 다시 실행하세요.") from exc
         if actual != (cleanup.mask_hash if mask else cleanup.clean_hash):
@@ -149,7 +146,7 @@ def register_cleanup_routes(app, factory, write_lock):
         record = db.get(ImageRecord, cleanup.image_id)
         if not download:
             try:
-                current_hash = hashlib.sha256(Path(record.file_path).read_bytes()).hexdigest()
+                current_hash = digest(record.file_path)
             except OSError:
                 current_hash = None
             if current_hash != cleanup.source_hash:

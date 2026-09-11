@@ -14,15 +14,20 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from . import __version__
 from .cleanup_api import register_cleanup_routes
-from .database import create_database
+from .database import create_database, session_dependency
 from .grouping import register_group_routes
 from .models import DatasetVersion, GTHistory, ImageRecord, Pair, Project, now
 from .schemas import ImportInput, PairInput, ProjectInput, VersionInput
-from .services import audit_dataset, digest, gt_value, import_directory, pair_dict
+from .services import audit_dataset, gt_value, import_directory, pair_dict
+from .storage import HIGH_DEPTH_MODES, digest, inside
 from .training_api import register_training_routes
 
 ROOT = Path(__file__).resolve().parents[2]
+LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+# Browser origins allowed to call the API: the served UI (8000) and the Vite dev server (5173).
+ALLOWED_ORIGINS = {f"http://{host}:{port}" for host in LOCAL_HOSTS for port in [8000, 5173]}
 
 
 def create_app(state_dir: Path | None = None):
@@ -32,8 +37,8 @@ def create_app(state_dir: Path | None = None):
         yield
         app.state.experiments.close()
 
-    app = FastAPI(title="AlignFail Dataset Studio", version="0.2.0", lifespan=lifespan)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
+    app = FastAPI(title="AlignFail Dataset Studio", version=__version__, lifespan=lifespan)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*LOCAL_HOSTS, "testserver"])
     app.state.state_dir = state_dir or Path(os.getenv("ALIGNFAIL_STATE_DIR", str(ROOT / ".studio")))
     engine, factory = create_database(app.state.state_dir)
     app.state.engine = engine
@@ -53,9 +58,7 @@ def create_app(state_dir: Path | None = None):
             },
         )
 
-    def session():
-        with factory() as db:
-            yield db
+    session = session_dependency(factory)
 
     def get_project(db, project_id):
         project = db.get(Project, project_id)
@@ -88,14 +91,13 @@ def create_app(state_dir: Path | None = None):
     async def local_origin_guard(request: Request, call_next):
         # Do not let an unrelated website operate this local filesystem-backed API.
         origin = request.headers.get("origin")
-        allowed = {f"http://{host}:{port}" for host in ["localhost", "127.0.0.1", "[::1]"] for port in [8000, 5173]}
-        if request.url.path.startswith("/api") and origin and origin not in allowed:
+        if request.url.path.startswith("/api") and origin and origin not in ALLOWED_ORIGINS:
             return Response("Origin is not allowed", status_code=403)
         return await call_next(request)
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.2.0", "phase": "dataset-studio"}
+        return {"status": "ok", "version": __version__, "phase": "dataset-studio"}
 
     @app.get("/api/projects")
     def list_projects(db: Session = Depends(session)):
@@ -204,7 +206,7 @@ def create_app(state_dir: Path | None = None):
             raise HTTPException(404, "이미지를 찾을 수 없습니다.")
         path = Path(record.file_path)
         project = get_project(db, record.project_id)
-        if not path.resolve().is_relative_to(Path(project.root_directory).resolve()):
+        if not inside(path, project.root_directory):
             raise HTTPException(403, "데이터 폴더 외부의 이미지는 제공하지 않습니다.")
         try:
             if digest(path) != record.file_hash:
@@ -212,7 +214,7 @@ def create_app(state_dir: Path | None = None):
             with Image.open(path) as original:
                 original.load()
                 # Coordinates refer to raw pixels; deliberately do not apply EXIF rotation.
-                if original.mode in {"I", "F", "I;16", "I;16B", "I;16L"}:
+                if original.mode in HIGH_DEPTH_MODES:
                     low, high = original.getextrema()
                     image = original.convert("F").point(lambda x: (x - low) * 255 / (high - low or 1)).convert("L")
                 else:

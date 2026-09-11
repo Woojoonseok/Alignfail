@@ -12,18 +12,8 @@ import numpy as np
 import torch
 
 from .config import TrainingConfig
-from .data import crop, crop_spec, group_split, metrics, read_image, sha
+from .data import crop, crop_spec, group_split, load_json, metrics, read_image, sha, write_json
 from .model import make_model
-
-
-def load(path):
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save(path, value):
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
-    temp.replace(path)
 
 
 class Stopped(Exception):
@@ -127,13 +117,13 @@ def evaluate(model, rows, config, directory, managed, export=False):
 def run(directory, managed=False):
     lock = exclusive_lock(directory.parent / "training.lock")
     try:
-        config = TrainingConfig(**load(directory / "config.json")).model_dump()
-        checks = load(directory / "integrity.json")
+        config = TrainingConfig(**load_json(directory / "config.json")).model_dump()
+        checks = load_json(directory / "integrity.json")
         for relative, expected in checks.items():
             if sha((directory / relative).read_bytes()) != expected:
                 raise ValueError(f"Experiment integrity check failed: {relative}")
-        manifest = load(directory / "dataset_manifest.json")
-        split = load(directory / "split_manifest.json")
+        manifest = load_json(directory / "dataset_manifest.json")
+        split = load_json(directory / "split_manifest.json")
         if group_split(manifest["pairs"], config) != split:
             raise ValueError("Split integrity/leakage check failed")
         train = [p for p in manifest["pairs"] if p["pair_id"] in split["train"]]
@@ -152,7 +142,7 @@ def run(directory, managed=False):
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
         torch.use_deterministic_algorithms(True)
-        env = load(directory / "environment.json")
+        env = load_json(directory / "environment.json")
         env.update(
             python=platform.python_version(),
             platform=platform.platform(),
@@ -165,7 +155,7 @@ def run(directory, managed=False):
             padding="reflect101",
             raw_prediction_stride=4,
         )
-        save(directory / "environment.json", env)
+        write_json(directory / "environment.json", env)
         model = make_model(config).to(config["device"])
         optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
         history = []
@@ -211,7 +201,7 @@ def run(directory, managed=False):
                 "metrics": scores,
             }
             history.append(current)
-            save(directory / "history.json", history)
+            write_json(directory / "history.json", history)
             print(json.dumps(current), flush=True)
             if scores["Overall"]["median_error"] < best:
                 best = scores["Overall"]["median_error"]
@@ -221,9 +211,9 @@ def run(directory, managed=False):
             torch.load(directory / "best.pt", map_location=config["device"], weights_only=True)["model"]
         )
         predictions, scores = evaluate(model, val, config, directory, managed, export=True)
-        save(directory / "predictions.json", predictions)
-        save(directory / "metrics.json", scores)
-        save(directory / "result.json", {"status": "completed"})
+        write_json(directory / "predictions.json", predictions)
+        write_json(directory / "metrics.json", scores)
+        write_json(directory / "result.json", {"status": "completed"})
     finally:
         lock.close()
 
@@ -236,10 +226,10 @@ def main():
     try:
         run(args.experiment.resolve(), args.managed)
     except Stopped:
-        save(args.experiment / "result.json", {"status": "stopped"})
+        write_json(args.experiment / "result.json", {"status": "stopped"})
         print("Training stopped; completed checkpoints retained.", flush=True)
     except Exception as exc:
-        save(args.experiment / "result.json", {"status": "failed", "error": str(exc)})
+        write_json(args.experiment / "result.json", {"status": "failed", "error": str(exc)})
         traceback.print_exc()
         raise SystemExit(1) from exc
 

@@ -1,18 +1,13 @@
-import hashlib
 from collections import defaultdict
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
-from .models import GTHistory, ImageCleanup, ImageRecord, Pair, ReferenceAnnotation, now
+from .models import GTHistory, ImageRecord, Pair, ReferenceAnnotation, now
+from .storage import active_cleanup, digest
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
-
-
-def digest(path: Path):
-    with path.open("rb") as file:
-        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def inspect_image(path: Path):
@@ -103,10 +98,6 @@ def import_directory(db, project, root: Path):
     project.root_directory = str(root)
     db.flush()
     return counts
-
-
-def active_cleanup(db, image_id):
-    return db.scalar(select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True)))
 
 
 def image_dict(db, image):

@@ -1,6 +1,5 @@
 """Local appearance-based cluster proposals; labels are assigned only on explicit apply."""
 
-import hashlib
 import io
 from pathlib import Path
 
@@ -10,14 +9,16 @@ from fastapi import Depends, HTTPException
 from PIL import Image
 from sqlalchemy import select
 
-from .models import ImageCleanup, ImageRecord, Pair, Project, now
+from .database import session_dependency
+from .models import ImageRecord, Pair, Project, now
 from .schemas import BulkGroupsInput, ClusterInput
+from .storage import HIGH_DEPTH_MODES, active_cleanup, inside, sha
 
 
 def appearance_features(content):
     with Image.open(io.BytesIO(content)) as image:
         image.load()
-        if image.mode in {"I", "F", "I;16", "I;16B", "I;16L"}:
+        if image.mode in HIGH_DEPTH_MODES:
             pixels = np.asarray(image, dtype=np.float32)
             pixels = (pixels - pixels.min()) / max(float(np.ptp(pixels)), 1) * 255
         else:
@@ -56,9 +57,7 @@ def cluster_features(features, count):
 
 
 def register_group_routes(app, factory, write_lock):
-    def session():
-        with factory() as db:
-            yield db
+    session = session_dependency(factory)
 
     def checked_pairs(db, project_id, requests):
         project = db.get(Project, project_id)
@@ -109,23 +108,19 @@ def register_group_routes(app, factory, write_lock):
                     record = db.get(ImageRecord, image_id) if image_id else None
                     if not record or record.error:
                         raise ValueError("이미지 없음 또는 읽기 오류")
-                    path = Path(record.file_path).resolve()
-                    if not path.is_relative_to(Path(project.root_directory).resolve()):
+                    if not inside(record.file_path, project.root_directory):
                         raise ValueError("프로젝트 외부 경로")
-                    content = path.read_bytes()
-                    if hashlib.sha256(content).hexdigest() != record.file_hash:
+                    content = Path(record.file_path).read_bytes()
+                    if sha(content) != record.file_hash:
                         raise ValueError("원본 변경: 폴더 재검색 필요")
-                    cleanup = db.scalar(
-                        select(ImageCleanup).where(ImageCleanup.image_id == image_id, ImageCleanup.active.is_(True))
-                    )
+                    cleanup = active_cleanup(db, image_id)
                     if cleanup:
-                        path = Path(cleanup.clean_path).resolve()
-                        if cleanup.source_hash != record.file_hash or not path.is_relative_to(
-                            app.state.state_dir.resolve() / "clean"
+                        if cleanup.source_hash != record.file_hash or not inside(
+                            cleanup.clean_path, app.state.state_dir / "clean"
                         ):
                             raise ValueError("Clean 원본/경로 불일치")
-                        content = path.read_bytes()
-                        if hashlib.sha256(content).hexdigest() != cleanup.clean_hash:
+                        content = Path(cleanup.clean_path).read_bytes()
+                        if sha(content) != cleanup.clean_hash:
                             raise ValueError("Clean 캐시 변경")
                     features.append(appearance_features(content))
                     accepted.append(

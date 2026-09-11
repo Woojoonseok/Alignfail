@@ -11,12 +11,14 @@ from fastapi.responses import FileResponse
 from pydantic import Field
 
 from training.config import TrainingConfig
-from training.data import sha
+from training.data import load_json, sha, write_json
 
-from .experiment_service import ExperimentManager, load_json, prepare, write_json
+from .database import session_dependency
+from .experiment_service import ExperimentManager, prepare
 from .models import DatasetVersion, ImageRecord, Pair, ReferenceAnnotation, now, uid
 from .schemas import StrictModel
-from .services import digest, pair_dict
+from .services import pair_dict
+from .storage import digest
 
 
 class PrepareInput(StrictModel):
@@ -35,9 +37,7 @@ def register_training_routes(app, factory, write_lock):
     manager = ExperimentManager(app.state.state_dir)
     app.state.experiments = manager
 
-    def session():
-        with factory() as db:
-            yield db
+    session = session_dependency(factory)
 
     def path_for(experiment_id):
         try:
