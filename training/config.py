@@ -7,6 +7,8 @@ class TrainingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     model: Literal["metric_patch_v1"] = "metric_patch_v1"
     crop_mode: Literal["fixed_160", "fixed_256", "fixed_320", "adaptive"] = "fixed_160"
+    # OM and SEM are trained as separate models; "all" exists only for diagnostics on mixed data.
+    modality: Literal["OM", "SEM", "all"] = "all"
     context_ratio: float = Field(default=1.5, ge=0.5, le=4)
     min_crop: int = Field(default=192, ge=32, le=1024)
     max_crop: int = Field(default=384, ge=32, le=1024)

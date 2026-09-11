@@ -186,6 +186,8 @@ def create_app(state_dir: Path | None = None):
             before = gt_value(pair)
             changed_gt = (pair.gt_x, pair.gt_y) != (data.gt_x, data.gt_y)
             for key, value in data.model_dump(exclude={"revision", "confirm_gt"}).items():
+                if key == "modality" and value is None:
+                    continue
                 setattr(pair, key, value)
             if changed_gt:
                 pair.gt_source = "manual" if pair.gt_x is not None else "none"
