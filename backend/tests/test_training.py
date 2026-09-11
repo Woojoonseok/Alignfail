@@ -173,6 +173,25 @@ def test_training_blocks_missing_roi_and_nonmanual_supervision(training_client, 
         )
 
 
+def test_prepare_trains_one_modality_at_a_time(training_client, tmp_path):
+    client, pid, version, _ = training_client
+    snapshot = client.get(f"/api/versions/{version['id']}/manifest").json()
+    assert {p["modality"] for p in snapshot["pairs"]} == {"SEM"}  # fixture names carry no OM token
+    with pytest.raises(ValueError, match="모달리티"):
+        prepare(
+            SimpleNamespace(manifest=snapshot, id=version["id"], number=1, project_id=pid),
+            TrainingConfig(folds=2, modality="OM").model_dump(),
+            tmp_path / "no_om",
+        )
+    manifest, split, _ = prepare(
+        SimpleNamespace(manifest=snapshot, id=version["id"], number=1, project_id=pid),
+        TrainingConfig(folds=2, modality="SEM").model_dump(),
+        tmp_path / "sem_only",
+    )
+    assert manifest["modality"] == "SEM" and len(manifest["pairs"]) == 4
+    assert len(split["train"]) + len(split["validation"]) == 4
+
+
 def wait_job(client, experiment_id, timeout=60):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

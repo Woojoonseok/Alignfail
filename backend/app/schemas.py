@@ -28,7 +28,7 @@ class PairInput(StrictModel):
     group_key: str = Field(default="", max_length=200)
     class_label: str = Field(default="", max_length=200)
     pattern_type: str = Field(default="unknown", pattern="^(A|B|unknown)$")
-    modality: str = Field(default="", pattern="^(OM|SEM|)$")
+    modality: str | None = Field(default=None, pattern="^(OM|SEM|)$")  # None keeps the stored value
     tier: str = Field(default="", max_length=50)
     notes: str = Field(default="", max_length=10000)
     enabled: bool = True

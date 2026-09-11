@@ -114,6 +114,7 @@ type Experiment = {
   created_at: string;
   config: {
     crop_mode: string;
+    modality?: string;
     embedding_dim: number;
     output_size: number;
     epochs: number;
@@ -419,8 +420,9 @@ export function ModelPage({ projectId }: { projectId: string }) {
               >
                 {trained.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.id.slice(0, 8)} · v{e.version} · {e.config.crop_mode} ·
-                    fold {e.config.fold} · med{" "}
+                    {e.id.slice(0, 8)} · v{e.version} ·{" "}
+                    {e.config.modality ?? "all"} · {e.config.crop_mode} · fold{" "}
+                    {e.config.fold} · med{" "}
                     {f3(e.metrics?.Overall?.median_error ?? undefined)}
                   </option>
                 ))}

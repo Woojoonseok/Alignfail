@@ -6,6 +6,7 @@ import "./training.css";
 
 type Config = {
   crop_mode: string;
+  modality: string;
   folds: number;
   fold: number;
   epochs: number;
@@ -95,6 +96,7 @@ type Experiment = {
 const modes = ["fixed_160", "fixed_256", "fixed_320", "adaptive"];
 const defaults: Config = {
   crop_mode: "fixed_160",
+  modality: "OM",
   folds: 5,
   fold: 0,
   epochs: 100,
@@ -153,6 +155,7 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
     exp?.manifest?.pairs[0];
   const prediction = exp?.predictions?.find((p) => p.pair_id === row?.pair_id);
   const activeVersion = versionId || versions.data?.[0]?.id || "";
+  // Same version/split/code and same non-crop settings (modality included) only.
   const comparisons = (experiments.data ?? []).filter(
     (e) => e.metrics && (!exp || e.comparison_hash === exp.comparison_hash),
   );
@@ -208,6 +211,18 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
               모델
               <select>
                 <option>Metric Patch · Shared CNN / Triplet v1</option>
+              </select>
+            </label>
+            <label>
+              Modality
+              <select
+                aria-label="학습 Modality"
+                value={config.modality}
+                onChange={(e) => field("modality", e.target.value)}
+              >
+                <option value="OM">OM · OM 모델</option>
+                <option value="SEM">SEM · SEM 모델</option>
+                <option value="all">전체 · 진단용</option>
               </select>
             </label>
             <label>
@@ -297,7 +312,7 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
               <tr>
                 <th>실험</th>
                 <th>Version / Fold</th>
-                <th>Crop</th>
+                <th>Modality / Crop</th>
                 <th>상태</th>
                 <th>학습 설정</th>
               </tr>
@@ -322,7 +337,9 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
                   <td>
                     v{e.version} / {e.config.fold}
                   </td>
-                  <td>{e.config.crop_mode}</td>
+                  <td>
+                    {e.config.modality ?? "all"} · {e.config.crop_mode}
+                  </td>
                   <td>{e.status}</td>
                   <td>
                     {e.config.epochs} epochs · LR {e.config.lr} · seed{" "}

@@ -24,9 +24,12 @@ def prepare(version, config, directory):
     directory.mkdir(parents=True)
     (directory / "data").mkdir()
     (directory / "preview").mkdir()
+    wanted = config.get("modality", "all")
     for pair in version.manifest["pairs"]:
         if not pair["enabled"]:
             continue
+        if wanted != "all" and pair.get("modality", "") != wanted:
+            continue  # one model per modality: other modalities stay out of this experiment
         annotation = pair.get("reference_annotation")
         if pair["import_issues"] or pair["gt_source"] != "manual" or pair["gt_x"] is None or pair["gt_y"] is None:
             raise ValueError(f"{pair['folder']}: 파일 오류 없는 Pair와 수동(또는 확인된) Query GT가 필요합니다.")
@@ -109,6 +112,8 @@ def prepare(version, config, directory):
             for key in ["near_black", "low_std", "low_edge_density", "problematic"]:
                 stats[mode][key] += int(quality[key])
         rows.append(row)
+    if not rows:
+        raise ValueError(f"선택한 모달리티({wanted})의 활성 Pair가 이 버전에 없습니다.")
     split = group_split(rows, config)
     manifest = {
         "schema": "alignfail.training.v1",
@@ -116,6 +121,7 @@ def prepare(version, config, directory):
         "dataset_version": version.number,
         "project_id": version.project_id,
         "crop_mode": config["crop_mode"],
+        "modality": wanted,
         "pairs": rows,
     }
     write_json(directory / "config.json", config)
