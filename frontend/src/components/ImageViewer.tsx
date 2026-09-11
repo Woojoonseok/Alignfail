@@ -69,7 +69,7 @@ export function ImageViewer({
         )}
         {image?.cleanup?.stale && <span>제거 결과 재생성 필요</span>}
       </div>
-      <div className="image-viewport">
+      <div className={`image-viewport ${zoom === 1 ? "fit" : ""}`}>
         {!image || image.error || failed ? (
           <div className="viewer-empty">
             <ImageIcon size={30} />
@@ -82,7 +82,10 @@ export function ImageViewer({
             <span>파일과 폴더 재검색 결과를 확인하세요.</span>
           </div>
         ) : (
-          <div className="image-stage" style={{ width: `${zoom * 100}%` }}>
+          <div
+            className={`image-stage ${zoom === 1 ? "fit" : ""}`}
+            style={zoom === 1 ? undefined : { width: `${zoom * 100}%` }}
+          >
             <img
               src={
                 cleanView && image.cleanup
