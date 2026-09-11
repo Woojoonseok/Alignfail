@@ -26,7 +26,13 @@
 - 네모 두 모서리 직접 지정과 원본 픽셀 좌표 반영, 두 이미지 전체 맞춤 표시 확인.
 - 회사 실제 이미지의 자동 탐지 정확도와 복원 품질은 아직 평가하지 않았습니다.
 
-검증일: 2026-09-08 (로컬 Windows 개발 환경)
+검증일: 2026-09-08 (로컬 Windows 개발 환경) · 재검증: 2026-09-11 (리팩토링 후)
+
+## 재검증 (2026-09-11)
+
+- 로컬 Windows, Python 3.13.7 venv + CPU PyTorch 2.14: `python -m pytest` **56개 테스트 통과** (`--import-mode=importlib`로도 동일).
+- `ruff check` / `ruff format --check` 통과, `npm run build`(tsc + Vite) 통과.
+- 합성 데이터 8 Pair로 서버를 띄워 health · 프로젝트 생성 · 폴더 등록 · 썸네일 · 표시 검출 · Audit API 응답을 확인.
 
 ## 자동 검증
 

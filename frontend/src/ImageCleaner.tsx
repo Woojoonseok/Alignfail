@@ -21,6 +21,7 @@ import {
   type ImageRecord,
   type PixelRect,
 } from "./api";
+import { pixelFromEvent } from "./coords";
 import "./cleaner.css";
 
 type Preview = {
@@ -78,7 +79,13 @@ export default function ImageCleaner({
     if (!viewport) return;
     const observer = new ResizeObserver(() => updateFitWidth());
     function updateFitWidth() {
-      if (viewport) setFitWidth(Math.min(viewport.clientWidth, viewport.clientHeight * width / height));
+      if (viewport)
+        setFitWidth(
+          Math.min(
+            viewport.clientWidth,
+            (viewport.clientHeight * width) / height,
+          ),
+        );
     }
     observer.observe(viewport);
     updateFitWidth();
@@ -274,27 +281,8 @@ export default function ImageCleaner({
                     className={mode ? "drawing" : ""}
                     viewBox={`0 0 ${width} ${height}`}
                     onClick={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect();
-                      pick(
-                        Math.max(
-                          0,
-                          Math.min(
-                            width - 1,
-                            Math.round(
-                              ((e.clientX - r.left) / r.width) * width,
-                            ),
-                          ),
-                        ),
-                        Math.max(
-                          0,
-                          Math.min(
-                            height - 1,
-                            Math.round(
-                              ((e.clientY - r.top) / r.height) * height,
-                            ),
-                          ),
-                        ),
-                      );
+                      const { x, y } = pixelFromEvent(e, width, height);
+                      pick(x, y);
                     }}
                   >
                     {showMask && config.box && (
@@ -358,7 +346,9 @@ export default function ImageCleaner({
                 {preview ? (
                   <div
                     className="cleanup-stage"
-                    style={{ width: fitWidth ? `${fitWidth * zoom}px` : "100%" }}
+                    style={{
+                      width: fitWidth ? `${fitWidth * zoom}px` : "100%",
+                    }}
                   >
                     <img
                       src={preview.preview_url}

@@ -38,7 +38,9 @@ def pairs(client, pid):
 
 
 def save(client, pair, **changes):
-    payload = {k: pair[k] for k in ["revision", "gt_x", "gt_y", "group_key", "tier", "notes", "enabled", "exclude_reason"]}
+    payload = {
+        k: pair[k] for k in ["revision", "gt_x", "gt_y", "group_key", "tier", "notes", "enabled", "exclude_reason"]
+    }
     payload.update(changes)
     return client.put(f"/api/pairs/{pair['id']}", json=payload)
 
@@ -78,7 +80,9 @@ def test_manual_gt_history_metadata_and_optimistic_lock(client, tmp_path):
     assert history[0]["after"]["x"] == 119.5
 
 
-@pytest.mark.parametrize("coords", [{"gt_x": 120, "gt_y": 0}, {"gt_x": 0, "gt_y": 80}, {"gt_x": -1, "gt_y": 0}, {"gt_x": 1, "gt_y": None}])
+@pytest.mark.parametrize(
+    "coords", [{"gt_x": 120, "gt_y": 0}, {"gt_x": 0, "gt_y": 80}, {"gt_x": -1, "gt_y": 0}, {"gt_x": 1, "gt_y": None}]
+)
 def test_gt_rejects_out_of_bounds_and_partial(client, tmp_path, coords):
     root = tmp_path / "Dada"
     make_pair(root)
@@ -205,10 +209,18 @@ def test_project_delete_keeps_original_images(client, tmp_path):
 
 def test_invalid_paths_and_external_origin(client, tmp_path):
     pid = client.post("/api/projects", json={"name": "A"}).json()["id"]
-    assert client.post(f"/api/projects/{pid}/import", json={"root_directory": str(tmp_path / 'missing')}).status_code == 422
+    assert (
+        client.post(f"/api/projects/{pid}/import", json={"root_directory": str(tmp_path / "missing")}).status_code
+        == 422
+    )
     assert client.post("/api/projects", json={"name": " "}).status_code == 422
-    assert client.post("/api/projects", json={"name": "B"}, headers={"origin": "https://unrelated.example"}).status_code == 403
-    assert client.post("/api/projects", json={"name": "B"}, headers={"origin": "http://localhost:8000"}).status_code == 201
+    assert (
+        client.post("/api/projects", json={"name": "B"}, headers={"origin": "https://unrelated.example"}).status_code
+        == 403
+    )
+    assert (
+        client.post("/api/projects", json={"name": "B"}, headers={"origin": "http://localhost:8000"}).status_code == 201
+    )
 
 
 def test_non_finite_gt_rejected_cleanly(client, tmp_path):
@@ -216,7 +228,11 @@ def test_non_finite_gt_rejected_cleanly(client, tmp_path):
     make_pair(root)
     pid = project(client, root)
     pair = pairs(client, pid)[0]
-    result = client.put(f"/api/pairs/{pair['id']}", content='{"revision":2,"gt_x":1e400,"gt_y":5}', headers={"Content-Type": "application/json"})
+    result = client.put(
+        f"/api/pairs/{pair['id']}",
+        content='{"revision":2,"gt_x":1e400,"gt_y":5}',
+        headers={"Content-Type": "application/json"},
+    )
     assert result.status_code == 422
     assert result.json()["detail"][0]["type"] == "finite_number"
 

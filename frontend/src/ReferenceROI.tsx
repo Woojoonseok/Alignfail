@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, imageUrl, cleanImageUrl, type Pair } from "./api";
+import { pixelFromEvent } from "./coords";
+import { useAction } from "./hooks";
 
 export default function ReferenceROI({
   pair,
@@ -20,22 +22,10 @@ export default function ReferenceROI({
   const [anchor, setAnchor] = useState<number[] | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [source, setSource] = useState("ref_box_manual");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const { busy, error, run: action } = useAction();
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  async function action(fn: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
-      await fn();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <dialog
       className="modal roi-modal"
@@ -120,23 +110,8 @@ export default function ReferenceROI({
               viewBox={`0 0 ${im.width} ${im.height}`}
               onClick={(e) => {
                 if (!drawing || busy) return;
-                const r = e.currentTarget.getBoundingClientRect();
-                const p = [
-                  Math.min(
-                    im.width! - 1,
-                    Math.max(
-                      0,
-                      Math.round(((e.clientX - r.left) / r.width) * im.width!),
-                    ),
-                  ),
-                  Math.min(
-                    im.height! - 1,
-                    Math.max(
-                      0,
-                      Math.round(((e.clientY - r.top) / r.height) * im.height!),
-                    ),
-                  ),
-                ];
+                const { x, y } = pixelFromEvent(e, im.width!, im.height!);
+                const p = [x, y];
                 if (!anchor) setAnchor(p);
                 else {
                   setBox([

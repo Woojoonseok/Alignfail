@@ -49,7 +49,7 @@ Windows 브라우저에서 **http://localhost:8000** 에 접속합니다. 기본
 
 소스 코드, `frontend/package-lock.json`, 실행 스크립트와 이 문서를 전달하세요. **Windows에서 만든 `.venv`나 `node_modules`는 WSL로 복사하지 않습니다.** WSL에서 새로 설치합니다.
 
-`python scripts/package_release.py`는 소스와 빌드된 UI를 `artifacts/alignfail-dataset-studio-v0.1.1.zip`으로 묶습니다. 원본 이미지, 합성 이미지, 프로젝트 DB와 로컬 Python/Node 환경은 포함하지 않습니다. Python 의존성은 직접 버전과 `backend/constraints.txt`의 간접 버전을 함께 고정합니다.
+`python scripts/package_release.py`는 소스와 빌드된 UI를 `artifacts/alignfail-dataset-studio-v<버전>.zip`으로 묶습니다. 버전은 `backend/app/__init__.py`의 `__version__`을 사용합니다. 원본 이미지, 합성 이미지, 프로젝트 DB와 로컬 Python/Node 환경은 포함하지 않습니다. Python 의존성은 직접 버전과 `backend/constraints.txt`의 간접 버전을 함께 고정합니다.
 
 `frontend/dist`는 여기서 빌드한 결과를 전달해도 됩니다. 빌드 결과를 전달한 경우 회사에서는 Node.js 없이 Python 의존성 설치와 `start-wsl.sh` 실행만으로 운영할 수 있습니다.
 
@@ -69,10 +69,22 @@ bash scripts/start-wsl.sh
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements-dev.txt
-python -m pytest backend/tests --import-mode=importlib
+python -m pytest
 ```
 
-테스트에는 backend를 Python 경로에 추가해야 합니다. 루트 `pytest.ini`에 설정되어 있으므로 저장소 루트에서 실행하세요.
+루트 `pytest.ini`가 `backend`, `backend/tests`를 Python 경로에 추가하고 테스트 경로를 지정하므로 저장소 루트에서 실행하세요. 공용 fixture는 `backend/tests/conftest.py`, 합성 이미지 헬퍼는 `backend/tests/support.py`에 있습니다. `--import-mode=importlib`를 붙여도 동일하게 동작합니다.
+
+PyTorch가 설치된 Python을 `ALIGNFAIL_TEST_TRAINING_PYTHON`으로 지정하면 건너뛰는 실제 학습 테스트 6개도 실행됩니다. 고정된 의존성은 Python 3.13에서도 설치·테스트가 확인되었지만, 운영 기준은 3.12입니다.
+
+### 코드 스타일
+
+Python은 [ruff](https://docs.astral.sh/ruff/), TypeScript/CSS는 prettier를 사용합니다. 설정은 각각 루트 `pyproject.toml`과 `frontend/.prettierrc`에 있습니다.
+
+```bash
+pip install ruff
+ruff format backend training scripts && ruff check backend training scripts
+npm --prefix frontend exec prettier -- --write "src/**/*.{ts,tsx,css}"
+```
 
 ```bash
 # Terminal 1
@@ -158,9 +170,11 @@ Pair Explorer의 **일괄 제거 · 그룹화**에서 작업합니다. 미저장
 ## 구조
 
 ```text
-backend/app/       FastAPI · SQLAlchemy · 파일 검사/GT/버전
-backend/tests/     기능·데이터 무결성 API 테스트
+backend/app/       FastAPI · SQLAlchemy · 파일 검사/GT/버전 (storage.py: hash·경로·Clean 조회 공용 헬퍼)
+backend/tests/     기능·데이터 무결성 API 테스트 (conftest.py 공용 fixture)
 frontend/src/      React 18 · TypeScript · TanStack Query · React Router
+frontend/src/pages/       화면 단위 컴포넌트 (Overview · PairExplorer · PairEditor · Audit · Versions · Workflow · Settings)
+frontend/src/components/  공용 UI (ui.tsx · ImageViewer · ProjectModals) · hooks.ts · coords.ts
 scripts/           WSL/Windows 실행 · 합성 이미지 생성
 training/          crop · diagnostics · group split · PyTorch model/train/evaluation
 .studio/           로컬 DB · Clean · 실험 스냅샷/체크포인트 (Git 제외)

@@ -5,29 +5,22 @@ import shutil
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 import cv2
 
-from training.data import MODES, crop, crop_spec, diagnostics, group_split, read_image, sha
-from .models import now, uid
+from training.data import MODES, crop, crop_spec, diagnostics, group_split, load_json, read_image, sha, write_json
+
+from .models import now
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def write_json(path, value):
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
-    temp.replace(path)
-
-
-def load_json(path):
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def prepare(version, config, directory):
-    rows, stats = [], {mode:{"total":0, "near_black":0,"low_std":0,"low_edge_density":0,"problematic":0} for mode in MODES}
+    rows, stats = (
+        [],
+        {mode: {"total": 0, "near_black": 0, "low_std": 0, "low_edge_density": 0, "problematic": 0} for mode in MODES},
+    )
     directory.mkdir(parents=True)
     (directory / "data").mkdir()
     (directory / "preview").mkdir()
@@ -39,11 +32,19 @@ def prepare(version, config, directory):
             raise ValueError(f"{pair['folder']}: 파일 오류 없는 Pair와 수동 Query GT가 필요합니다.")
         if not annotation or annotation["image_hash"] != pair["reference"]["file_hash"]:
             raise ValueError(f"{pair['folder']}: 유효한 REF ROI가 포함된 새 Dataset Version을 생성하세요.")
-        row = {"pair_id":pair["id"], "folder":pair["folder"], "group_key":pair["group_key"],
-               "ref_box":annotation["box"], "ref_center":annotation["center"], "reference_annotation":annotation,
-               "query_gt":[pair["gt_x"],pair["gt_y"]], "pattern_type":pair.get("pattern_type","unknown"),
-               "tier":pair["tier"], "class_label":pair.get("class_label", "")}
-        for role, field in [("ref","reference"),("query","query")]:
+        row = {
+            "pair_id": pair["id"],
+            "folder": pair["folder"],
+            "group_key": pair["group_key"],
+            "ref_box": annotation["box"],
+            "ref_center": annotation["center"],
+            "reference_annotation": annotation,
+            "query_gt": [pair["gt_x"], pair["gt_y"]],
+            "pattern_type": pair.get("pattern_type", "unknown"),
+            "tier": pair["tier"],
+            "class_label": pair.get("class_label", ""),
+        }
+        for role, field in [("ref", "reference"), ("query", "query")]:
             record = pair[field]
             if not record:
                 raise ValueError(f"{pair['folder']}: {role} 이미지 없음")
@@ -71,12 +72,26 @@ def prepare(version, config, directory):
             if not (0 <= center[0] < image.shape[1] and 0 <= center[1] < image.shape[0]):
                 raise ValueError(f"{pair['folder']}: {role} 좌표 범위 오류")
             if role == "query":
-                corners = [(0,0),(0,image.shape[0]-1),(image.shape[1]-1,0),(image.shape[1]-1,image.shape[0]-1)]
-                if max(((x-center[0])**2+(y-center[1])**2)**.5 for x,y in corners) < config["negative_min_distance"]:
+                corners = [
+                    (0, 0),
+                    (0, image.shape[0] - 1),
+                    (image.shape[1] - 1, 0),
+                    (image.shape[1] - 1, image.shape[0] - 1),
+                ]
+                if (
+                    max(((x - center[0]) ** 2 + (y - center[1]) ** 2) ** 0.5 for x, y in corners)
+                    < config["negative_min_distance"]
+                ):
                     raise ValueError(f"{pair['folder']}: negative_min_distance를 충족하는 위치 없음")
-            row.update({f"{role}_path":str(dest.resolve()),f"{role}_hash":actual_hash,
-                        f"{role}_original_hash":record["file_hash"],f"{role}_cleanup":cleanup,
-                        f"{role}_size":[image.shape[1],image.shape[0]]})
+            row.update(
+                {
+                    f"{role}_path": str(dest.resolve()),
+                    f"{role}_hash": actual_hash,
+                    f"{role}_original_hash": record["file_hash"],
+                    f"{role}_cleanup": cleanup,
+                    f"{role}_size": [image.shape[1], image.shape[0]],
+                }
+            )
             cv2.imwrite(str(directory / "preview" / f"{pair['id']}_{role}.png"), image)
         reference = read_image(row["ref_path"], row["ref_hash"])
         row["crops"] = {}
@@ -87,25 +102,46 @@ def prepare(version, config, directory):
             row["crops"][mode] = {**metadata, **quality}
             cv2.imwrite(str(directory / "preview" / f"{pair['id']}_{mode}.png"), pixels)
             stats[mode]["total"] += 1
-            for key in ["near_black","low_std","low_edge_density","problematic"]:
+            for key in ["near_black", "low_std", "low_edge_density", "problematic"]:
                 stats[mode][key] += int(quality[key])
         rows.append(row)
     split = group_split(rows, config)
-    manifest = {"schema":"alignfail.training.v1", "dataset_version_id":version.id, "dataset_version":version.number,
-                "project_id":version.project_id, "crop_mode":config["crop_mode"], "pairs":rows}
+    manifest = {
+        "schema": "alignfail.training.v1",
+        "dataset_version_id": version.id,
+        "dataset_version": version.number,
+        "project_id": version.project_id,
+        "crop_mode": config["crop_mode"],
+        "pairs": rows,
+    }
     write_json(directory / "config.json", config)
     write_json(directory / "dataset_manifest.json", manifest)
     write_json(directory / "split_manifest.json", split)
     write_json(directory / "diagnostics.json", stats)
-    shutil.copytree(ROOT / "training", directory / "code" / "training", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(
+        ROOT / "training", directory / "code" / "training", ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+    )
     try:
-        commit = subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True,stderr=subprocess.DEVNULL).strip()
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
+        ).strip()
     except (OSError, subprocess.SubprocessError):
         commit = "unknown"
     files = [p for p in (directory / "code").rglob("*") if p.is_file()]
-    checks = {str(p.relative_to(directory)):sha(p.read_bytes()) for p in files + [directory / n for n in ["config.json","dataset_manifest.json","split_manifest.json"]]}
+    checks = {
+        str(p.relative_to(directory)): sha(p.read_bytes())
+        for p in files + [directory / n for n in ["config.json", "dataset_manifest.json", "split_manifest.json"]]
+    }
     write_json(directory / "integrity.json", checks)
-    write_json(directory / "environment.json", {"git_commit":commit,"dataset_version":version.number,"seed":config["seed"],"code_hash":sha(json.dumps(checks,sort_keys=True).encode())})
+    write_json(
+        directory / "environment.json",
+        {
+            "git_commit": commit,
+            "dataset_version": version.number,
+            "seed": config["seed"],
+            "code_hash": sha(json.dumps(checks, sort_keys=True).encode()),
+        },
+    )
     return manifest, split, stats
 
 
@@ -122,14 +158,15 @@ class ExperimentManager:
     def activate(self):
         for path in self.root.glob("*/experiment.json"):
             value = load_json(path)
-            if value["status"] in {"running","queued"}:
+            if value["status"] in {"running", "queued"}:
                 value.update(status="failed", error="Backend 재시작으로 중단됨. 새 실험을 생성하세요.")
-                write_json(path,value)
+                write_json(path, value)
         self.worker = threading.Thread(target=self.run, daemon=True)
         self.worker.start()
 
     def path(self, experiment_id):
         from uuid import UUID
+
         UUID(experiment_id)
         path = self.root / experiment_id
         if not (path / "experiment.json").exists():
@@ -140,43 +177,55 @@ class ExperimentManager:
         with self.lock:
             state = load_json(path / "experiment.json")
             state.update(values)
-            write_json(path / "experiment.json",state)
+            write_json(path / "experiment.json", state)
 
     def start(self, path):
         with self.lock:
             if load_json(path / "experiment.json")["status"] != "prepared":
                 raise ValueError("이미 시작한 실험입니다. 새 실험을 생성하세요.")
-            self.update(path,status="queued")
+            self.update(path, status="queued")
             self.jobs.put(path)
 
     def stop(self, path):
         with self.lock:
             state = load_json(path / "experiment.json")
-            if state["status"] in {"queued","running"}:
+            if state["status"] in {"queued", "running"}:
                 (path / "stop.request").touch()
                 if state["status"] == "queued":
-                    self.update(path,status="stopped")
+                    self.update(path, status="stopped")
 
     def run(self):
         while not self.shutdown.is_set():
             try:
-                path = self.jobs.get(timeout=.5)
+                path = self.jobs.get(timeout=0.5)
             except queue.Empty:
                 continue
             with self.lock:
                 if load_json(path / "experiment.json")["status"] != "queued":
                     continue
-                self.update(path,status="running",started_at=now())
+                self.update(path, status="running", started_at=now())
             try:
-                python = os.getenv("ALIGNFAIL_TRAINING_PYTHON",sys.executable)
+                python = os.getenv("ALIGNFAIL_TRAINING_PYTHON", sys.executable)
                 flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 with (path / "train.log").open("ab") as log:
-                    env = {**os.environ, "PYTHONDONTWRITEBYTECODE":"1", "PYTHONUNBUFFERED":"1", "CUBLAS_WORKSPACE_CONFIG":":4096:8"}
+                    env = {
+                        **os.environ,
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "PYTHONUNBUFFERED": "1",
+                        "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+                    }
                     (path / "heartbeat").touch()
-                    self.process = subprocess.Popen([python,"-m","training.train","--experiment",str(path),"--managed"],cwd=path/"code",stdout=log,stderr=subprocess.STDOUT,env=env,creationflags=flags)
+                    self.process = subprocess.Popen(
+                        [python, "-m", "training.train", "--experiment", str(path), "--managed"],
+                        cwd=path / "code",
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        env=env,
+                        creationflags=flags,
+                    )
                     while self.process.poll() is None:
                         (path / "heartbeat").touch()
-                        if self.shutdown.wait(.5):
+                        if self.shutdown.wait(0.5):
                             (path / "stop.request").touch()
                             try:
                                 self.process.wait(timeout=10)
@@ -185,9 +234,15 @@ class ExperimentManager:
                             break
                     code = self.process.wait()
                 result = load_json(path / "result.json") if (path / "result.json").exists() else {}
-                self.update(path,status=result.get("status","failed") if code == 0 else "failed",finished_at=now(),return_code=code,error=result.get("error", "train.log를 확인하세요." if code else ""))
+                self.update(
+                    path,
+                    status=result.get("status", "failed") if code == 0 else "failed",
+                    finished_at=now(),
+                    return_code=code,
+                    error=result.get("error", "train.log를 확인하세요." if code else ""),
+                )
             except Exception as exc:
-                self.update(path,status="failed",error=str(exc),finished_at=now())
+                self.update(path, status="failed", error=str(exc), finished_at=now())
             finally:
                 self.process = None
 

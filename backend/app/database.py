@@ -14,11 +14,13 @@ def create_database(state_dir: Path):
     url = os.getenv("ALIGNFAIL_DATABASE_URL", f"sqlite:///{(state_dir / 'studio.db').as_posix()}")
     engine = create_engine(url, connect_args={"check_same_thread": False} if url.startswith("sqlite") else {})
     if url.startswith("sqlite"):
+
         @event.listens_for(engine, "connect")
         def sqlite_config(connection, _):
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA busy_timeout=10000")
+
     Base.metadata.create_all(engine)
     if "pattern_type" not in {c["name"] for c in inspect(engine).get_columns("pairs")}:
         with engine.begin() as connection:
@@ -27,3 +29,13 @@ def create_database(state_dir: Path):
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE pairs ADD COLUMN class_label VARCHAR(200) NOT NULL DEFAULT ''"))
     return engine, sessionmaker(engine, expire_on_commit=False)
+
+
+def session_dependency(factory):
+    """FastAPI dependency yielding one ORM session per request."""
+
+    def session():
+        with factory() as db:
+            yield db
+
+    return session

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type Version } from "./api";
+import { useAction } from "./hooks";
 import "./training.css";
 
 type Config = {
@@ -123,8 +124,7 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
   const [versionId, setVersionId] = useState("");
   const [selected, setSelected] = useState("");
   const [pairId, setPairId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const { busy, error, run } = useAction();
   const versions = useQuery({
     queryKey: ["training-versions", projectId],
     queryFn: () => api<Version[]>(`/projects/${projectId}/versions`),
@@ -147,7 +147,9 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
   const exp = detail.data;
   const row =
     exp?.manifest?.pairs.find((p) => p.pair_id === pairId) ??
-    exp?.manifest?.pairs.find((p) => p.pair_id === exp.predictions?.[0]?.pair_id) ??
+    exp?.manifest?.pairs.find(
+      (p) => p.pair_id === exp.predictions?.[0]?.pair_id,
+    ) ??
     exp?.manifest?.pairs[0];
   const prediction = exp?.predictions?.find((p) => p.pair_id === row?.pair_id);
   const activeVersion = versionId || versions.data?.[0]?.id || "";
@@ -156,19 +158,12 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
   );
   const field = (key: keyof Config, value: string | number) =>
     setConfig((c) => ({ ...c, [key]: value }));
-  async function action(fn: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
+  const action = (fn: () => Promise<void>) =>
+    run(async () => {
       await fn();
       await experiments.refetch();
       if (selected) await detail.refetch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+    });
   const numeric = (key: keyof Config, label: string, step = 1) => (
     <label key={key}>
       {label}
@@ -473,7 +468,9 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
               {exp.manifest?.pairs.map((p) => (
                 <option key={p.pair_id} value={p.pair_id}>
                   {p.folder} · {p.pattern_type}
-                  {exp.split?.validation.includes(p.pair_id) ? " · Validation" : " · Train"}
+                  {exp.split?.validation.includes(p.pair_id)
+                    ? " · Validation"
+                    : " · Train"}
                 </option>
               ))}
             </select>
