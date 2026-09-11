@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CheckCircle2, Circle, Search, SlidersHorizontal } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { type Pair } from "../api";
 import type { PageProps } from "../types";
 import { useBeforeUnload } from "../hooks";
@@ -19,6 +25,10 @@ export function PairExplorer({
   const [fallbackId] = useState(pairs[0]?.id);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [byClass, setByClass] = useState(
+    () => localStorage.getItem("alignfail.pairs.byClass") === "1",
+  );
+  const [collapsed, setCollapsed] = useState(new Set<string>());
   const [dirty, setDirty] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
@@ -33,10 +43,34 @@ export function PairExplorer({
         (filter === "issues" && !!p.import_issues.length) ||
         (filter === "excluded" && !p.enabled)),
   );
+  // When grouped by class the visible order (and prev/next) follows the class sections.
+  const sections = byClass
+    ? [...new Set(filtered.map((p) => p.class_label.trim()))]
+        .sort((a, b) =>
+          a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "ko"),
+        )
+        .map((key) => ({
+          key,
+          items: filtered.filter((p) => p.class_label.trim() === key),
+        }))
+    : [{ key: "", items: filtered }];
+  const ordered = sections.flatMap((s) => s.items);
   const selected =
     pairs.find((p) => p.id === params.get("pair")) ??
     pairs.find((p) => p.id === fallbackId) ??
-    filtered[0];
+    ordered[0];
+  function toggleByClass(on: boolean) {
+    setByClass(on);
+    localStorage.setItem("alignfail.pairs.byClass", on ? "1" : "0");
+  }
+  function toggleSection(key: string) {
+    setCollapsed((s) => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
   function select(pair: Pair) {
     setParams({ pair: pair.id });
   }
@@ -44,7 +78,7 @@ export function PairExplorer({
     reportDirty(dirty || batchBusy);
   }, [dirty, batchBusy, reportDirty]);
   useEffect(() => () => reportDirty(false), [reportDirty]);
-  const index = selected ? filtered.findIndex((p) => p.id === selected.id) : -1;
+  const index = selected ? ordered.findIndex((p) => p.id === selected.id) : -1;
   useBeforeUnload(dirty);
   if (!pairs.length)
     return (
@@ -100,35 +134,63 @@ export function PairExplorer({
           <option value="issues">파일 확인 필요</option>
           <option value="excluded">제외됨</option>
         </select>
+        <label className="checkbox-label pair-list-toggle">
+          <input
+            type="checkbox"
+            checked={byClass}
+            onChange={(e) => toggleByClass(e.target.checked)}
+          />{" "}
+          클래스별로 묶어 보기
+        </label>
         <div className="pair-list-scroll">
-          {filtered.map((p) => (
-            <button
-              key={p.id}
-              className={`pair-list-item ${selected?.id === p.id ? "selected" : ""}`}
-              onClick={() => select(p)}
-            >
-              <div className="pair-item-top">
-                <strong>{p.folder}</strong>
-                {p.gt_x !== null && p.enabled ? (
-                  <CheckCircle2 size={14} />
-                ) : (
-                  <Circle size={13} />
-                )}
-              </div>
-              <div className="pair-item-bottom">
-                <div className="table-thumbs">
-                  <Thumb image={p.reference} />
-                  <Thumb image={p.query} />
-                </div>
-                <span>
-                  {p.import_issues.length
-                    ? "파일 확인"
-                    : !p.enabled
-                      ? "제외됨"
-                      : p.group_key || "그룹 미지정"}
-                </span>
-              </div>
-            </button>
+          {sections.map((section) => (
+            <div key={section.key || "__unassigned"}>
+              {byClass && (
+                <button
+                  type="button"
+                  className="pair-list-section"
+                  aria-expanded={!collapsed.has(section.key)}
+                  onClick={() => toggleSection(section.key)}
+                >
+                  <ChevronRight
+                    size={13}
+                    className={collapsed.has(section.key) ? "" : "open"}
+                  />
+                  <strong>{section.key || "미분류"}</strong>
+                  <span>{section.items.length}</span>
+                </button>
+              )}
+              {!(byClass && collapsed.has(section.key)) &&
+                section.items.map((p) => (
+                  <button
+                    key={p.id}
+                    className={`pair-list-item ${selected?.id === p.id ? "selected" : ""}`}
+                    onClick={() => select(p)}
+                  >
+                    <div className="pair-item-top">
+                      <strong>{p.folder}</strong>
+                      {p.gt_x !== null && p.enabled ? (
+                        <CheckCircle2 size={14} />
+                      ) : (
+                        <Circle size={13} />
+                      )}
+                    </div>
+                    <div className="pair-item-bottom">
+                      <div className="table-thumbs">
+                        <Thumb image={p.reference} />
+                        <Thumb image={p.query} />
+                      </div>
+                      <span>
+                        {p.import_issues.length
+                          ? "파일 확인"
+                          : !p.enabled
+                            ? "제외됨"
+                            : p.group_key || "그룹 미지정"}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+            </div>
           ))}
           {!filtered.length && (
             <p className="list-empty">검색 결과가 없습니다.</p>
@@ -149,12 +211,12 @@ export function PairExplorer({
             notify={notify}
             onDirty={setDirty}
             position={
-              index >= 0 ? `${index + 1} / ${filtered.length}` : "필터 외 Pair"
+              index >= 0 ? `${index + 1} / ${ordered.length}` : "필터 외 Pair"
             }
-            previous={index > 0 ? () => select(filtered[index - 1]) : undefined}
+            previous={index > 0 ? () => select(ordered[index - 1]) : undefined}
             next={
-              index >= 0 && index < filtered.length - 1
-                ? () => select(filtered[index + 1])
+              index >= 0 && index < ordered.length - 1
+                ? () => select(ordered[index + 1])
                 : undefined
             }
           />
