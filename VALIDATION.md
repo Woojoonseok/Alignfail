@@ -1,5 +1,14 @@
 # Phase 1 검증 기록
 
+## 클래스 연결·이름 변경 및 표시 추출 수정 — 2026-09-12
+
+- 학습 Python 환경을 지정한 전체 자동 테스트 **72개 통과**, skip 없음. 기존 deprecation warning 2건.
+- TypeScript 검사·production build 및 `git diff --check` 통과.
+- 클래스 이동 시 공유 REF 교체, 자체 REF 보존, 템플릿 없는 클래스로 이동 시 공유 REF 해제, OM/SEM 불일치 시 변경 전체 취소를 검증했습니다.
+- Clean 이미지가 활성화되어도 원본의 흰 네모·십자선에서 ROI와 미확인 자동 GT를 추출하며 기존 Clean을 유지하는 회귀 테스트를 추가했습니다.
+- 클래스 이름 변경은 필터와 관계없이 제외 항목까지 포함하며, 구성원·revision 검증 후 Pair와 템플릿을 단일 트랜잭션으로 갱신합니다. 일부 구성원만 지정하거나 기존 이름과 충돌하는 요청의 변경 취소를 검증했습니다.
+- 이번 UI 수정은 코드 검토와 빌드로 확인했습니다. 실제 회사 데이터 및 브라우저 조작 검증은 수행하지 않았습니다.
+
 ## v0.2.0 Training Studio Phase A–C — 2026-09-11
 
 - 자동 테스트 **56개 통과**(기존 deprecation warning 2건). TypeScript 검사·production build 및 Dataset/Training 두 Python 환경의 `pip check` 통과.

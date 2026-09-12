@@ -106,6 +106,10 @@ class AttachInput(StrictModel):
     class_label: str = Field(min_length=1, max_length=200)
 
 
+class ClassRenameInput(AttachInput):
+    new_label: str = Field(min_length=1, max_length=200)
+
+
 class MatchInput(StrictModel):
     pairs: list[PairRevision] = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=3, ge=1, le=10)

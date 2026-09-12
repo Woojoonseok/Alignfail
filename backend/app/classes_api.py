@@ -13,13 +13,13 @@ from .cleaning import detect_markings, load_pixels
 from .database import session_dependency
 from .grouping import appearance_features
 from .models import ClassTemplate, GTHistory, ImageRecord, Pair, Project, ReferenceAnnotation, now
-from .schemas import AttachInput, ClassTemplateInput, MarkingsInput, MatchInput
+from .schemas import AttachInput, ClassRenameInput, ClassTemplateInput, MarkingsInput, MatchInput
 from .services import checked_pairs, gt_value, image_dict, modality_of
 from .storage import HashMismatch, active_cleanup, inside, read_verified, sha
 
 
-def image_bytes(db, app, project, record):
-    """Verified bytes of the image, preferring a valid Clean copy. Raises ValueError."""
+def image_bytes(db, app, project, record, *, prefer_clean=True):
+    """Verified image bytes; markings must be read from the original. Raises ValueError."""
     if not record or record.error:
         raise ValueError("이미지 없음 또는 읽기 오류")
     if not inside(record.file_path, project.root_directory):
@@ -28,7 +28,7 @@ def image_bytes(db, app, project, record):
         content = read_verified(record.file_path, record.file_hash)
     except HashMismatch as exc:
         raise ValueError("원본 변경: 폴더 재검색 필요") from exc
-    cleanup = active_cleanup(db, record.id)
+    cleanup = active_cleanup(db, record.id) if prefer_clean else None
     if cleanup:
         if cleanup.source_hash != record.file_hash or not inside(cleanup.clean_path, app.state.state_dir / "clean"):
             raise ValueError("Clean 원본/경로 불일치")
@@ -141,18 +141,53 @@ def register_class_routes(app, factory, write_lock):
                 pair = pairs[item.id]
                 changed = pair.class_label != label
                 pair.class_label = label
-                if pair.reference_image_id is None and template_image is not None:
-                    if pair.modality and template_modality(db, template_image) not in {"", pair.modality}:
+                reference = db.get(ImageRecord, pair.reference_image_id) if pair.reference_image_id else None
+                if reference is None or reference.folder != pair.folder:
+                    if (
+                        template_image
+                        and pair.modality
+                        and template_modality(db, template_image) not in {"", pair.modality}
+                    ):
                         raise HTTPException(422, f"{pair.folder}: 모달리티({pair.modality})가 템플릿 REF와 다릅니다.")
-                    pair.reference_image_id = template_image.id
-                    linked += 1
-                    changed = True
+                    reference_id = template_image.id if template_image else None
+                    if pair.reference_image_id != reference_id:
+                        pair.reference_image_id = reference_id
+                        linked += int(reference_id is not None)
+                        changed = True
                 if changed:
                     pair.revision += 1
                     pair.updated_at = now()
                     updated += 1
             db.commit()
             return {"updated": updated, "linked": linked, "template": bool(template_image)}
+
+    @app.post("/api/projects/{project_id}/classes/rename")
+    def rename(project_id: str, data: ClassRenameInput, db=Depends(session)):
+        """Rename every class member and its template in one transaction."""
+        with write_lock:
+            _, pairs = checked_pairs(db, project_id, data.pairs)
+            label, new_label = data.class_label.strip(), data.new_label.strip()
+            if not label or not new_label:
+                raise HTTPException(422, "클래스 이름이 비어 있습니다.")
+            members = list(db.scalars(select(Pair).where(Pair.project_id == project_id, Pair.class_label == label)))
+            if set(pairs) != {p.id for p in members}:
+                raise HTTPException(409, "클래스 구성원이 변경되었습니다. 새로고침 후 다시 실행하세요.")
+            if label == new_label:
+                return {"updated": 0}
+            templates = templates_of(db, project_id)
+            if new_label in templates or db.scalar(
+                select(Pair.id).where(Pair.project_id == project_id, Pair.class_label == new_label).limit(1)
+            ):
+                raise HTTPException(409, "이미 있는 클래스 이름입니다. 다른 이름을 입력하세요.")
+            for pair in members:
+                pair.class_label = new_label
+                pair.revision += 1
+                pair.updated_at = now()
+            if label in templates:
+                templates[label].class_label = new_label
+                templates[label].updated_at = now()
+            db.commit()
+            return {"updated": len(members)}
 
     @app.post("/api/projects/{project_id}/classes/match")
     def match(project_id: str, data: MatchInput, db=Depends(session)):
@@ -222,7 +257,8 @@ def register_class_routes(app, factory, write_lock):
                         if existing and existing.image_hash == ref.file_hash and not data.replace_existing:
                             outcome["roi"] = "kept"
                         else:
-                            box = detect_markings(load_pixels(image_bytes(db, app, project, ref)))["box"]
+                            pixels = load_pixels(image_bytes(db, app, project, ref, prefer_clean=False))
+                            box = detect_markings(pixels)["box"]
                             if box is None:
                                 outcome["roi"] = "none"
                             else:
@@ -249,7 +285,8 @@ def register_class_routes(app, factory, write_lock):
                         elif pair.gt_x is not None and not data.replace_existing:
                             outcome["gt"] = "kept"
                         else:
-                            cross = detect_markings(load_pixels(image_bytes(db, app, project, query)))["cross"]
+                            pixels = load_pixels(image_bytes(db, app, project, query, prefer_clean=False))
+                            cross = detect_markings(pixels)["cross"]
                             if cross is None:
                                 outcome["gt"] = "none"
                             else:

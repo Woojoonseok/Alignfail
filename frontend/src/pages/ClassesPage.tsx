@@ -171,26 +171,15 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
       notify(`${result.updated}개 Pair · 클래스 해제`);
     });
   }
-  async function rename(members: Pair[], from: string, to: string) {
+  async function rename(from: string, to: string) {
     await run(async () => {
-      await api(`/projects/${project.id}/groups/bulk`, "POST", {
-        assignments: members.map((p) => ({
-          id: p.id,
-          revision: p.revision,
-          class_label: to,
-        })),
+      await api(`/projects/${project.id}/classes/rename`, "POST", {
+        pairs: pairs
+          .filter((p) => p.class_label === from)
+          .map((p) => ({ id: p.id, revision: p.revision })),
+        class_label: from,
+        new_label: to,
       });
-      if (templates.get(from)?.image) {
-        await api(
-          `/projects/${project.id}/classes/${encodeURIComponent(to)}/template`,
-          "PUT",
-          { image_id: templates.get(from)!.image!.id },
-        );
-        await api(
-          `/projects/${project.id}/classes/${encodeURIComponent(from)}/template`,
-          "DELETE",
-        );
-      }
       setRenaming(null);
       await reload();
       notify(`'${from}' → '${to}' 이름 변경`);
@@ -418,7 +407,7 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
                     onSubmit={(e) => {
                       e.preventDefault();
                       const label = renameValue.trim();
-                      if (label && label !== key) rename(members, key, label);
+                      if (label && label !== key) rename(key, label);
                       else setRenaming(null);
                     }}
                   >

@@ -184,3 +184,142 @@ def test_sixteen_bit_query_is_reported_not_guessed(template_client, tmp_path):
         json={"pairs": [{"id": deep["id"], "revision": deep["revision"]}], "roi": False},
     ).json()
     assert res["results"][0]["gt"].startswith("error")
+
+
+def current_pairs(client, pid):
+    return {p["folder"]: p for p in client.get(f"/api/projects/{pid}/pairs").json()}
+
+
+def pair_revisions(pairs):
+    return [{"id": p["id"], "revision": p["revision"]} for p in pairs]
+
+
+def set_templates(client, pid, pairs):
+    for folder, label in [("pair_v_OM", "vertical"), ("pair_h_OM", "horizontal")]:
+        result = client.put(
+            f"/api/projects/{pid}/classes/{label}/template", json={"image_id": pairs[folder]["reference"]["id"]}
+        )
+        assert result.status_code == 200, result.text
+
+
+def test_class_move_replaces_shared_ref_but_preserves_own_ref(template_client):
+    client, pid, pairs = template_client
+    set_templates(client, pid, pairs)
+    folders = ["s_export_OM.png", "pair_v_OM"]
+    for label in ["vertical", "horizontal"]:
+        latest = current_pairs(client, pid)
+        result = client.post(
+            f"/api/projects/{pid}/classes/attach",
+            json={"pairs": pair_revisions([latest[f] for f in folders]), "class_label": label},
+        )
+        assert result.status_code == 200, result.text
+    latest = current_pairs(client, pid)
+    assert latest["s_export_OM.png"]["reference"]["id"] == pairs["pair_h_OM"]["reference"]["id"]
+    assert latest["pair_v_OM"]["reference"]["id"] == pairs["pair_v_OM"]["reference"]["id"]
+    # A class without a template must not retain another class's shared REF.
+    result = client.post(
+        f"/api/projects/{pid}/classes/attach",
+        json={"pairs": pair_revisions([latest[f] for f in folders]), "class_label": "no-template"},
+    )
+    assert result.status_code == 200, result.text
+    latest = current_pairs(client, pid)
+    assert latest["s_export_OM.png"]["reference"] is None
+    assert latest["pair_v_OM"]["reference"]["id"] == pairs["pair_v_OM"]["reference"]["id"]
+
+
+def test_reassign_shared_ref_rejects_other_modality_atomically(template_client):
+    client, pid, pairs = template_client
+    set_templates(client, pid, pairs)
+    loose = pairs["s_export_OM.png"]
+    client.post(
+        f"/api/projects/{pid}/classes/attach",
+        json={"pairs": pair_revisions([loose]), "class_label": "vertical"},
+    )
+    owner = pairs["pair_h_OM"]
+    assert client.put(f"/api/pairs/{owner['id']}", json={"revision": owner["revision"], "modality": "SEM"}).status_code == 200
+    before = current_pairs(client, pid)
+    result = client.post(
+        f"/api/projects/{pid}/classes/attach",
+        json={"pairs": pair_revisions([before["s_export_OM.png"]]), "class_label": "horizontal"},
+    )
+    assert result.status_code == 422
+    assert current_pairs(client, pid) == before
+
+
+def test_markings_read_original_after_cleanup(template_client):
+    client, pid, pairs = template_client
+    pair = pairs["pair_v_OM"]
+    for role, marking in [("reference", "box"), ("query", "cross")]:
+        image = pair[role]
+        detected = client.get(f"/api/images/{image['id']}/clean/detect").json()
+        result = client.post(
+            f"/api/images/{image['id']}/clean",
+            json={"source_hash": image["file_hash"], marking: detected[marking]},
+        )
+        assert result.status_code == 201, result.text
+    before = current_pairs(client, pid)[pair["folder"]]
+    result = client.post(
+        f"/api/projects/{pid}/markings/apply", json={"pairs": pair_revisions([before])}
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["results"][0]["roi"] == result.json()["results"][0]["gt"] == "saved"
+    after = current_pairs(client, pid)[pair["folder"]]
+    assert after["reference_annotation"]["center"] == [95, 77.5]
+    assert (after["gt_x"], after["gt_y"], after["gt_source"]) == (95.5, 82.5, "auto_cross")
+    assert after["reference"]["cleanup"] == before["reference"]["cleanup"]
+    assert after["query"]["cleanup"] == before["query"]["cleanup"]
+
+
+def test_class_rename_includes_excluded_members_and_moves_template(template_client):
+    client, pid, pairs = template_client
+    set_templates(client, pid, pairs)
+    excluded = pairs["e_export_OM.png"]
+    assert client.put(
+        f"/api/pairs/{excluded['id']}",
+        json={"revision": excluded["revision"], "enabled": False, "exclude_reason": "review later"},
+    ).status_code == 200
+    latest = current_pairs(client, pid)
+    assert client.post(
+        f"/api/projects/{pid}/classes/attach",
+        json={"pairs": pair_revisions(latest.values()), "class_label": "vertical"},
+    ).status_code == 200
+    before = current_pairs(client, pid)
+    # A filtered or stale client cannot rename just the visible subset.
+    result = client.post(
+        f"/api/projects/{pid}/classes/rename",
+        json={"pairs": pair_revisions([before["pair_v_OM"]]), "class_label": "vertical", "new_label": "renamed"},
+    )
+    assert result.status_code == 409
+    assert current_pairs(client, pid) == before
+    result = client.post(
+        f"/api/projects/{pid}/classes/rename",
+        json={"pairs": pair_revisions(before.values()), "class_label": "vertical", "new_label": "renamed"},
+    )
+    assert result.status_code == 200 and result.json()["updated"] == len(before)
+    after = current_pairs(client, pid)
+    for folder, pair in after.items():
+        assert pair["class_label"] == "renamed"
+        assert pair["revision"] == before[folder]["revision"] + 1
+        assert pair["reference"] == before[folder]["reference"]
+        assert pair["enabled"] == before[folder]["enabled"]
+    classes = {c["class_label"]: c for c in client.get(f"/api/projects/{pid}/classes").json()["classes"]}
+    assert "vertical" not in classes
+    assert classes["renamed"]["template"]["image"]["id"] == pairs["pair_v_OM"]["reference"]["id"]
+
+
+def test_class_rename_rejects_conflicts_and_stale_revisions(template_client):
+    client, pid, pairs = template_client
+    set_templates(client, pid, pairs)
+    client.post(
+        f"/api/projects/{pid}/classes/attach",
+        json={"pairs": pair_revisions([pairs["s_export_OM.png"]]), "class_label": "vertical"},
+    )
+    before = current_pairs(client, pid)
+    summaries = client.get(f"/api/projects/{pid}/classes").json()
+    body = {"pairs": pair_revisions([before["s_export_OM.png"]]), "class_label": "vertical", "new_label": "horizontal"}
+    assert client.post(f"/api/projects/{pid}/classes/rename", json=body).status_code == 409
+    body["new_label"] = "renamed"
+    body["pairs"][0]["revision"] -= 1
+    assert client.post(f"/api/projects/{pid}/classes/rename", json=body).status_code == 409
+    assert current_pairs(client, pid) == before
+    assert client.get(f"/api/projects/{pid}/classes").json() == summaries
