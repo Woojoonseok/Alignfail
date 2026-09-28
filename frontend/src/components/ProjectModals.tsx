@@ -266,11 +266,12 @@ export function ImportModal({
             disabled={mutation.isPending}
             onChange={(e) => setGroupFoldersAsClasses(e.target.checked)}
           />
-          Group / Group_ 폴더를 하나의 클래스로 자동 지정
+          Group 폴더 이름을 클래스로 자동 지정
         </label>
         <p className="field-hint">
-          예: Group/폴더1, 폴더2, 폴더3 → 모두 Group 클래스.
-          하위 REF/Query 쌍과 일반 이미지에 함께 적용하며, 이미 지정한 클래스는 유지합니다.
+          Group, Group_001, Group (1), Group (2) 형식을 지원합니다.
+          각 Group 폴더 아래의 REF/Query 쌍과 일반 이미지는 모두 해당 폴더 이름의
+          클래스로 묶으며, 이미 지정한 클래스는 유지합니다.
         </p>
         <ErrorBox error={mutation.error} />
         <div className="modal-actions">

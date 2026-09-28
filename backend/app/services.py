@@ -85,10 +85,14 @@ def directory_items(root: Path, paired_folders: set[Path]):
 
 
 def group_folder_class(root: Path, folder: Path) -> str:
-    """Use the nearest Group or Group_* folder within the source, including its root."""
+    """Use the nearest Group, Group_* or Group (number) folder within the source."""
     names = (root.name, *folder.relative_to(root).parts)
     for name in reversed(names):
-        if name.lower() == "group" or (name.lower().startswith("group_") and name[6:].strip()):
+        if (
+            name.lower() == "group"
+            or (name.lower().startswith("group_") and name[6:].strip())
+            or re.fullmatch(r"group\s*\(\s*[0-9]+\s*\)", name, re.IGNORECASE)
+        ):
             label = name.strip()
             if len(label) > 200:
                 raise HTTPException(422, "Group 폴더의 클래스 이름은 200자 이하여야 합니다.")

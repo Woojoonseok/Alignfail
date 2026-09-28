@@ -498,7 +498,9 @@ def test_group_class_does_not_use_ancestors_outside_selected_root(client, tmp_pa
     assert pairs(client, pid)[0]["class_label"] == ""
 
 
-@pytest.mark.parametrize("group_root", ["Group", "group", "dataset/Group"])
+@pytest.mark.parametrize(
+    "group_root", ["Group", "group", "dataset/Group", "Group (1)", "dataset/Group (2)", "gRoUp(3)", "Group ( 4 )"]
+)
 def test_group_container_class_covers_mixed_pair_and_image_folders(client, group_root):
     pid = client.post("/api/projects", json={"name": "Mixed Group"}).json()["id"]
     response = upload_images(
@@ -525,8 +527,9 @@ def test_group_container_class_covers_mixed_pair_and_image_folders(client, group
     assert summary["unassigned"] == 0
 
 
-def test_plain_group_rescan_fills_class_without_changing_pair_or_gt(client, tmp_path):
-    root = tmp_path / "Group"
+@pytest.mark.parametrize("group_name", ["Group", "Group (1)"])
+def test_plain_group_rescan_fills_class_without_changing_pair_or_gt(client, tmp_path, group_name):
+    root = tmp_path / group_name
     make_pair(root, "폴더123123")
     pid = client.post("/api/projects", json={"name": "Group rescan"}).json()["id"]
     response = client.post(
@@ -543,5 +546,28 @@ def test_plain_group_rescan_fills_class_without_changing_pair_or_gt(client, tmp_
     assert response.status_code == 200
     after = pairs(client, pid)[0]
     assert after["id"] == first["id"]
-    assert after["class_label"] == "Group"
+    assert after["class_label"] == group_name
     assert (after["gt_x"], after["gt_y"]) == (10, 12)
+
+
+def test_numbered_group_upload_keeps_sibling_classes_separate(client):
+    pid = client.post("/api/projects", json={"name": "Numbered Groups"}).json()["id"]
+    response = upload_images(
+        client,
+        pid,
+        [
+            "dataset/Group (1)/folder123/이미지.png",
+            "dataset/Group (1)/folder123/이미지_REF.png",
+            "dataset/Group (1)/more/a.png",
+            "dataset/Group (1)/more/b.png",
+            "dataset/Group (2)/a.png",
+            "dataset/Group (2)/b.png",
+            "dataset/NotGroup (3)/c.png",
+            "dataset/Group (4) backup/d.png",
+        ],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["invalid_pairs"] == 0
+    summary = client.get(f"/api/projects/{pid}/classes").json()
+    assert {c["class_label"]: c["count"] for c in summary["classes"]} == {"Group (1)": 3, "Group (2)": 2}
+    assert summary["unassigned"] == 2
