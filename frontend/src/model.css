@@ -14,6 +14,52 @@
 .model-desc {
   padding: 0 25px;
 }
+.experiment-purpose-body {
+  padding: 0 25px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #40544e;
+}
+.experiment-purpose-body p {
+  margin: 0 0 16px;
+}
+.experiment-table-scroll {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+.experiment-purpose table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.experiment-purpose caption {
+  text-align: left;
+  padding-bottom: 8px;
+  color: #60746a;
+}
+.experiment-purpose th,
+.experiment-purpose td {
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #dce5df;
+}
+.experiment-purpose thead {
+  background: #eef7f2;
+}
+.experiment-purpose th:first-child {
+  min-width: 130px;
+}
+.experiment-purpose summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #16846b;
+  margin-bottom: 12px;
+}
+.experiment-purpose li {
+  margin-bottom: 8px;
+}
 .model-controls {
   display: flex;
   align-items: flex-end;

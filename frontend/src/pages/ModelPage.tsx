@@ -324,6 +324,68 @@ export function ModelPage({ projectId }: { projectId: string }) {
         </div>
       </section>
 
+      <section className="panel model-section experiment-purpose">
+        <div className="section-title">
+          <h2>160×160을 기준으로 무엇을 더 실험하나요?</h2>
+        </div>
+        <div className="experiment-purpose-body">
+          <p>
+            <strong>먼저 볼 것은 입력 주변 범위의 효과입니다.</strong> 160×160은
+            현재 기준 crop 크기입니다. 같은 CNN과 Triplet 학습을 유지하면서
+            256×256, 320×320, ROI 크기에 맞춘 Adaptive를 각각 학습해,
+            작은 crop에서 놓친 주변 구조가 위치 찾기에 도움이 되는지 비교합니다.
+            위 Crop 선택은 구조 설명만 바꾸며, 실제 실험은 Training에서 준비합니다.
+          </p>
+          <div className="experiment-table-scroll">
+            <table>
+              <caption>현재 실행 가능한 crop 비교 · Adaptive 수치는 기본 설정</caption>
+              <thead>
+                <tr><th>실험</th><th>원본에서 자르는 범위 → 모델 입력</th><th>확인하려는 것</th></tr>
+              </thead>
+              <tbody>
+                <tr><th>Fixed 160 · 기준</th><td>160×160 → 160×160</td><td>국소 질감만으로 정답과 비슷한 오답 위치를 구분할 수 있는가?</td></tr>
+                <tr><th>Fixed 256</th><td>256×256 → 256×256</td><td>주변 구조를 조금 더 보면 반복 패턴 오인이 줄어드는가?</td></tr>
+                <tr><th>Fixed 320</th><td>320×320 → 320×320</td><td>더 넓은 배치 정보의 이득이 불필요한 배경과 계산량 증가보다 큰가?</td></tr>
+                <tr><th>Adaptive</th><td>ROI 최대 변 × 1.5를 192~384px로 제한 → 320×320</td><td>패턴 크기별로 보는 범위를 맞추면 고정 crop보다 일관적인가? 리사이즈로 미세 질감이 손실되는가?</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <strong>비교 방법:</strong> OM과 SEM은 각각 실험합니다. 같은 데이터
+            버전·Train/Validation 그룹·seed·epoch·학습률·모델 차원을 유지하고
+            crop 정책을 바꿉니다. Median/Mean 위치 오차는 낮을수록,
+            Acc@5·10·20은 높을수록 좋습니다. 처리 시간도 함께 확인합니다.
+            Adaptive는 주변 범위와 리사이즈 효과가 함께 바뀌므로 Fixed 320과
+            비교해 해석합니다. 큰 crop이 더 좋다는 결론은 아직 없습니다.
+          </p>
+          <p>
+            <strong>새 이미지에서 보고 싶은 결과:</strong> s 이미지는 기존
+            성공 위치의 십자선을 읽고 사람이 확인한 GT로 정확도를 평가합니다.
+            e 이미지는 십자선이 없어도 대응 REF와 수동 GT를 지정하면 기존
+            실패 사례를 얼마나 찾는지 평가할 수 있습니다. 표시는 입력에서
+            제거한 Clean을 사용해 표시 자체가 정답 단서가 되지 않게 준비합니다.
+            s/e별 지표는 GT가 준비된 표본에서 해석하며, 현재 비교 화면은
+            주로 Overall과 Pattern별 결과를 보여 줍니다.
+          </p>
+          <details>
+            <summary>기존 방식과의 비교, 이후 모델 실험</summary>
+            <p>
+              현재 Metric Patch v1은 새로 만든 기준 모델입니다. 회사의 기존
+              모델 코드·가중치를 연결해 같은 조건으로 재현한 상태는 아닙니다.
+              기존 방식보다 개선됐는지는 동일 Query·검수 GT에서 기존 예측과
+              새 예측을 비교해야 합니다. s/e 표기만으로 정밀도 개선을 증명할 수는 없습니다.
+            </p>
+            <ul>
+              <li><strong>큰 crop이 유리하면:</strong> 160의 미세 질감과 320 이상 범위의 주변 구조를 함께 보는 Local + Context 두 경로를 검토합니다.</li>
+              <li><strong>반복 패턴을 계속 혼동하면:</strong> 모델이 높은 점수를 준 오답 위치를 학습하는 hard negative와 밝기·블러 증강을 검토합니다.</li>
+              <li><strong>위치는 근처인데 오차가 남으면:</strong> 현재 4px 탐색 격자에서 얻은 후보를 세밀하게 보정하는 offset 모델을 검토합니다.</li>
+              <li><strong>클래스 검수가 충분해지면:</strong> 클래스 라벨을 활용하는 SupCon·Prototype과 기존 모델 연결을 검토합니다. 현재 Triplet loss에는 클래스 라벨이 들어가지 않습니다.</li>
+            </ul>
+            <p>위 네 가지는 후속 계획이며 현재 실행 가능한 모델 옵션은 아닙니다.</p>
+          </details>
+        </div>
+      </section>
+
       {/* ---------------- Training & inference flow ---------------- */}
       <div className="model-columns">
         <section className="panel model-section">
