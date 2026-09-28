@@ -22,8 +22,9 @@ from .grouping import register_group_routes
 from .models import DatasetVersion, GTHistory, ImageRecord, Pair, Project, now
 from .schemas import ImportInput, PairInput, ProjectInput, VersionInput
 from .services import audit_dataset, gt_value, import_directory, pair_dict
-from .storage import HIGH_DEPTH_MODES, digest, inside
+from .storage import HIGH_DEPTH_MODES, digest, inside_project, project_directories
 from .training_api import register_training_routes
+from .upload_api import register_upload_routes
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
@@ -49,6 +50,7 @@ def create_app(state_dir: Path | None = None):
     register_group_routes(app, factory, write_lock)
     register_training_routes(app, factory, write_lock)
     register_class_routes(app, factory, write_lock)
+    register_upload_routes(app, factory, write_lock)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_input(_request, exc):
@@ -81,6 +83,7 @@ def create_app(state_dir: Path | None = None):
             "name": project.name,
             "description": project.description,
             "root_directory": project.root_directory,
+            "data_directories": project_directories(project),
             "created_at": project.created_at,
             "pair_count": len(pairs),
             "enabled_count": sum(p.enabled for p in pairs),
@@ -140,17 +143,15 @@ def create_app(state_dir: Path | None = None):
     def import_pairs(project_id: str, data: ImportInput, db: Session = Depends(session)):
         with write_lock:
             project = get_project(db, project_id)
+            if not data.root_directory.strip():
+                raise HTTPException(422, "폴더 경로를 입력하세요.")
             root = Path(data.root_directory.strip()).expanduser().resolve()
             if not root.is_dir():
                 raise HTTPException(
                     422, "폴더를 찾을 수 없습니다. 서버에서 접근 가능한 경로를 입력하세요. WSL 예: /mnt/d/Dada"
                 )
-            if project.root_directory and Path(project.root_directory).resolve() != root:
-                raise HTTPException(
-                    409, "등록된 데이터 경로는 변경할 수 없습니다. 다른 폴더는 새 프로젝트로 등록하세요."
-                )
             try:
-                result = import_directory(db, project, root)
+                result = import_directory(db, project, root, group_folders_as_classes=data.group_folders_as_classes)
                 db.commit()
             except OSError as exc:
                 db.rollback()
@@ -217,7 +218,7 @@ def create_app(state_dir: Path | None = None):
             raise HTTPException(404, "이미지를 찾을 수 없습니다.")
         path = Path(record.file_path)
         project = get_project(db, record.project_id)
-        if not inside(path, project.root_directory):
+        if not inside_project(path, project):
             raise HTTPException(403, "데이터 폴더 외부의 이미지는 제공하지 않습니다.")
         try:
             if digest(path) != record.file_hash:
@@ -301,6 +302,7 @@ def create_app(state_dir: Path | None = None):
                 "created_at": now(),
                 "project": project.name,
                 "root_directory": project.root_directory,
+                "data_directories": project_directories(project),
                 "description": data.description,
                 "coordinate_system": "raw-image-pixels, zero-based, x-right, y-down",
                 "pairs": pairs,

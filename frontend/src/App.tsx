@@ -5,6 +5,7 @@ import {
   Routes,
   useBlocker,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -86,6 +87,7 @@ const PAGES: Record<string, { title: string; description: string }> = {
 export default function App() {
   const client = useQueryClient();
   const location = useLocation();
+  const navigate = useNavigate();
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => api<Project[]>("/projects"),
@@ -114,6 +116,7 @@ export default function App() {
     await Promise.all([
       client.invalidateQueries({ queryKey: ["projects"] }),
       client.invalidateQueries({ queryKey: ["pairs"] }),
+      client.invalidateQueries({ queryKey: ["classes"] }),
       client.invalidateQueries({ queryKey: ["versions"] }),
       client.invalidateQueries({ queryKey: ["history"] }),
     ]);
@@ -265,7 +268,7 @@ export default function App() {
                   onClick={() => setImportModal(true)}
                 >
                   <FolderInput size={17} />
-                  {project.root_directory ? "폴더 재검색" : "데이터 가져오기"}
+                  이미지 폴더 가져오기
                 </button>
               </div>
             )}
@@ -286,7 +289,7 @@ export default function App() {
               <div className="eyebrow">START WITH YOUR DATA</div>
               <h2>첫 번째 데이터셋을 만나보세요.</h2>
               <p>
-                Pair 폴더를 연결하고, 이미지를 검수하고,
+                이미지 폴더를 업로드하고, 이미지를 검수하고,
                 <br />
                 학습에 사용할 정답 좌표를 직접 지정할 수 있습니다.
               </p>
@@ -299,7 +302,7 @@ export default function App() {
               <div className="welcome-steps">
                 <span>01 프로젝트 생성</span>
                 <ArrowRight size={14} />
-                <span>02 Dada 폴더 연결</span>
+                <span>02 이미지 폴더 업로드</span>
                 <ArrowRight size={14} />
                 <span>03 GT 검수</span>
               </div>
@@ -377,6 +380,7 @@ export default function App() {
                     project={project}
                     refresh={refresh}
                     notify={setToast}
+                    importData={() => setImportModal(true)}
                     deleted={() => chooseProject("")}
                   />
                 }
@@ -407,7 +411,8 @@ export default function App() {
             await refresh();
             chooseProject(id);
             setProjectModal(false);
-            setToast("프로젝트가 생성되었습니다. Dada 폴더를 연결하세요.");
+            setImportModal(true);
+            setToast("프로젝트가 생성되었습니다. 이미지 폴더를 선택하세요.");
           }}
         />
       )}
@@ -419,6 +424,7 @@ export default function App() {
             await refresh();
             setImportModal(false);
             setToast(message);
+            navigate("/pairs");
           }}
         />
       )}

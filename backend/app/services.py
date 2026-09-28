@@ -7,7 +7,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
 from .models import GTHistory, ImageRecord, Pair, Project, ReferenceAnnotation, now
-from .storage import active_cleanup, digest
+from .storage import active_cleanup, digest, project_directories
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 # "OM" as its own token in the file name (sample_OM_01, OM-3, om.png); anything else is SEM.
@@ -70,29 +70,66 @@ def clear_gt(db, pair, reason):
         db.add(GTHistory(pair_id=pair.id, before=before, after=gt_value(pair), reason=reason))
 
 
-def import_directory(db, project, root: Path):
+def directory_items(root: Path, paired_folders: set[Path]):
+    """Keep REF folders together; otherwise import each image as a Query."""
+    entries = sorted((p for p in root.iterdir() if not p.is_symlink()), key=lambda p: p.name.lower())
+    files = [p for p in entries if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES]
+    if root in paired_folders or any(is_ref(p.name) for p in files):
+        yield root, files, True
+    else:
+        for path in files:
+            yield path, [path], False
+    for folder in entries:
+        if folder.is_dir():
+            yield from directory_items(folder, paired_folders)
+
+
+def group_folder_class(root: Path, folder: Path) -> str:
+    """Use the nearest Group or Group_* folder within the source, including its root."""
+    names = (root.name, *folder.relative_to(root).parts)
+    for name in reversed(names):
+        if name.lower() == "group" or (name.lower().startswith("group_") and name[6:].strip()):
+            label = name.strip()
+            if len(label) > 200:
+                raise HTTPException(422, "Group 폴더의 클래스 이름은 200자 이하여야 합니다.")
+            return label
+    return ""
+
+
+def import_directory(db, project, root: Path, *, group_folders_as_classes: bool = True):
+    roots = project_directories(project)
+    if str(root) not in roots:
+        if any(root.is_relative_to(Path(p)) or Path(p).is_relative_to(root) for p in roots):
+            raise HTTPException(409, "이미 등록한 폴더의 상위/하위 경로입니다. 등록한 폴더를 재검색하세요.")
+        roots.append(str(root))
+    index = roots.index(str(root))
+    prefix = "" if index == 0 else f"{root.name} [{index + 1}]/"
     images = {i.file_path: i for i in db.scalars(select(ImageRecord).where(ImageRecord.project_id == project.id))}
     pairs = {p.folder: p for p in db.scalars(select(Pair).where(Pair.project_id == project.id))}
+    # Preserve existing folder-pair IDs even when their REF has since disappeared.
+    paired_folders = {
+        root / p.folder.removeprefix(prefix)
+        for p in pairs.values()
+        if (p.source_directory or project.root_directory) == str(root)
+        and (root / p.folder.removeprefix(prefix)).is_dir()
+    }
     counts = {"new_pairs": 0, "updated_pairs": 0, "images": 0, "invalid_pairs": 0}
-    entries = sorted(
-        [p for p in root.iterdir() if not p.is_symlink() and (p.is_dir() or p.suffix.lower() in IMAGE_SUFFIXES)],
-        key=lambda p: p.name.lower(),
-    )
     seen_folders = set()
-    for entry in entries:
-        # A sub-folder is one pair (REF + Query); a loose image directly under the root is a
-        # Query-only pair (e.g. production exports that arrive without a REF).
-        name = entry.name
-        files = sorted(p for p in entry.iterdir() if p.is_file()) if entry.is_dir() else [entry]
+    for entry, files, paired in directory_items(root, paired_folders):
+        name = prefix + (entry.relative_to(root).as_posix() if entry != root else ".")
         seen_folders.add(name)
         pair = pairs.get(name)
+        if pair is not None and (pair.source_directory or project.root_directory) != str(root):
+            raise HTTPException(409, "등록 항목 이름이 충돌합니다. 폴더 이름을 변경해 다시 가져오세요.")
         if pair is None:
-            pair = Pair(project_id=project.id, folder=name)
+            pair = Pair(project_id=project.id, folder=name, source_directory=str(root))
             db.add(pair)
             db.flush()
             counts["new_pairs"] += 1
         else:
             counts["updated_pairs"] += 1
+        if group_folders_as_classes and not pair.class_label:
+            pair.class_label = group_folder_class(root, entry if paired else entry.parent)
         old_query_id = pair.query_image_id
         old_query = db.get(ImageRecord, old_query_id) if old_query_id else None
         old_hash = old_query.file_hash if old_query else None
@@ -108,11 +145,13 @@ def import_directory(db, project, root: Path):
                     folder=name,
                     file_path=key,
                     file_name=path.name,
-                    role="REF" if entry.is_dir() and is_ref(path.name) else "QUERY",
+                    role="REF" if paired and is_ref(path.name) else "QUERY",
                 )
                 db.add(record)
                 db.flush()
                 images[key] = record
+            record.folder = name
+            record.role = "REF" if paired and is_ref(path.name) else "QUERY"
             for attr, value in inspect_image(path).items():
                 setattr(record, attr, value)
             roles[record.role].append(record)
@@ -140,9 +179,7 @@ def import_directory(db, project, root: Path):
             pair.modality = modality_of(name, *(r.file_name for r in refs + queries))
         # The s*/e* convention belongs to production exports, which arrive as loose files; folder
         # pairs keep "unknown" so a query called sample.png is not mistaken for a success.
-        pair.match_result = (
-            match_result_of(queries[0].file_name) if len(queries) == 1 and not entry.is_dir() else "unknown"
-        )
+        pair.match_result = match_result_of(queries[0].file_name) if len(queries) == 1 and not paired else "unknown"
         current_query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
         if old_query_id != pair.query_image_id or old_hash != (current_query.file_hash if current_query else None):
             clear_gt(db, pair, "QUERY 파일 변경으로 GT 재검토 필요")
@@ -151,11 +188,13 @@ def import_directory(db, project, root: Path):
         pair.updated_at = now()
         counts["invalid_pairs"] += bool(issues)
     for name, pair in pairs.items():
-        if name not in seen_folders:
+        if (pair.source_directory or project.root_directory) == str(root) and name not in seen_folders:
             pair.import_issues = ["Pair 폴더가 없습니다. 원본 경로를 확인하거나 Pair를 제외하세요."]
             pair.revision += 1
             pair.updated_at = now()
-    project.root_directory = str(root)
+    if not project.root_directory:
+        project.root_directory = str(root)
+    project.data_directories = roots
     db.flush()
     return counts
 

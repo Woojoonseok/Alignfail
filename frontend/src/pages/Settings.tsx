@@ -10,11 +10,13 @@ export function Settings({
   refresh,
   notify,
   deleted,
+  importData,
 }: {
   project: Project;
   refresh: () => Promise<void>;
   notify: Notify;
   deleted: () => void;
+  importData: () => void;
 }) {
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description);
@@ -61,11 +63,24 @@ export function Settings({
             />
           </label>
           <label>
-            데이터 경로
-            <input readOnly value={project.root_directory || "연결되지 않음"} />
+            등록한 데이터 폴더 · {project.data_directories.length}개
+            <textarea
+              readOnly
+              value={
+                project.data_directories.join("\n") ||
+                "아직 가져온 폴더가 없습니다."
+              }
+            />
           </label>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={importData}
+          >
+            이미지 폴더 추가 · 재검색
+          </button>
           <p className="field-hint">
-            다른 데이터 경로는 새 프로젝트로 연결하세요.
+            같은 프로젝트에 이미지 폴더를 계속 추가할 수 있습니다.
           </p>
           <ErrorBox error={update.error} />
           <button className="button primary" disabled={update.isPending}>

@@ -9,7 +9,17 @@ from training.data import sha
 
 from .models import ImageCleanup
 
-__all__ = ["HIGH_DEPTH_MODES", "HashMismatch", "active_cleanup", "digest", "inside", "read_verified", "sha"]
+__all__ = [
+    "HIGH_DEPTH_MODES",
+    "HashMismatch",
+    "active_cleanup",
+    "digest",
+    "inside",
+    "inside_project",
+    "project_directories",
+    "read_verified",
+    "sha",
+]
 
 # PIL modes that need min/max normalisation before they can be shown as 8-bit.
 HIGH_DEPTH_MODES = {"I", "F", "I;16", "I;16B", "I;16L"}
@@ -27,6 +37,14 @@ def digest(path: Path) -> str:
 def inside(path, root) -> bool:
     """True when `path` resolves to a location under `root` (symlinks resolved)."""
     return Path(path).resolve().is_relative_to(Path(root).resolve())
+
+
+def project_directories(project) -> list[str]:
+    return list(dict.fromkeys(p for p in [project.root_directory, *(project.data_directories or [])] if p))
+
+
+def inside_project(path, project) -> bool:
+    return any(inside(path, root) for root in project_directories(project))
 
 
 def read_verified(path, expected_hash: str) -> bytes:

@@ -96,7 +96,7 @@ export function Overview({
           <div className="readiness-steps">
             {[
               {
-                name: "데이터 폴더 연결",
+                name: "이미지 폴더 가져오기",
                 detail: "Pair 구조와 이미지를 자동으로 검사합니다.",
                 done: !!project.root_directory,
                 action: importData,
@@ -185,7 +185,7 @@ export function Overview({
         </div>
         {!pairs.length ? (
           <Empty title="연결된 데이터가 없습니다.">
-            <p>Dada 폴더를 연결하면 Pair 목록이 여기에 표시됩니다.</p>
+            <p>이미지 폴더를 업로드하면 목록이 여기에 표시됩니다.</p>
             <button className="button secondary" onClick={importData}>
               <FolderInput size={16} /> 데이터 가져오기
             </button>
@@ -247,9 +247,13 @@ export function Overview({
       </section>
       <div className="path-bar">
         <Database size={15} />
-        <span>DATA ROOT</span>
-        <code>{project.root_directory || "아직 연결되지 않았습니다."}</code>
-        <span className="path-end">원본 파일 참조</span>
+        <span>DATA FOLDERS</span>
+        <code>
+          {project.data_directories.length
+            ? `등록한 폴더 ${project.data_directories.length}개`
+            : "아직 가져온 폴더가 없습니다."}
+        </code>
+        <span className="path-end">업로드 · 경로 연결</span>
       </div>
     </>
   );

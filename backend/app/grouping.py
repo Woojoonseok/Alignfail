@@ -12,7 +12,7 @@ from .database import session_dependency
 from .models import ImageRecord, now
 from .schemas import BulkGroupsInput, ClusterInput
 from .services import checked_pairs
-from .storage import HIGH_DEPTH_MODES, active_cleanup, inside, sha
+from .storage import HIGH_DEPTH_MODES, active_cleanup, inside, inside_project, sha
 
 
 def appearance_features(content):
@@ -93,7 +93,7 @@ def register_group_routes(app, factory, write_lock):
                     record = db.get(ImageRecord, image_id) if image_id else None
                     if not record or record.error:
                         raise ValueError("이미지 없음 또는 읽기 오류")
-                    if not inside(record.file_path, project.root_directory):
+                    if not inside_project(record.file_path, project):
                         raise ValueError("프로젝트 외부 경로")
                     content = Path(record.file_path).read_bytes()
                     if sha(content) != record.file_hash:

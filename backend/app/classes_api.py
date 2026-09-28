@@ -15,14 +15,14 @@ from .grouping import appearance_features
 from .models import ClassTemplate, GTHistory, ImageRecord, Pair, Project, ReferenceAnnotation, now
 from .schemas import AttachInput, ClassRenameInput, ClassTemplateInput, MarkingsInput, MatchInput
 from .services import checked_pairs, gt_value, image_dict, modality_of
-from .storage import HashMismatch, active_cleanup, inside, read_verified, sha
+from .storage import HashMismatch, active_cleanup, inside, inside_project, read_verified, sha
 
 
 def image_bytes(db, app, project, record, *, prefer_clean=True):
     """Verified image bytes; markings must be read from the original. Raises ValueError."""
     if not record or record.error:
         raise ValueError("이미지 없음 또는 읽기 오류")
-    if not inside(record.file_path, project.root_directory):
+    if not inside_project(record.file_path, project):
         raise ValueError("프로젝트 외부 경로")
     try:
         content = read_verified(record.file_path, record.file_hash)

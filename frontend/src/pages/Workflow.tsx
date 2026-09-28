@@ -29,7 +29,7 @@ export function Workflow({
   const steps = [
     {
       title: "데이터 폴더 등록",
-      text: "Dada의 하위 폴더를 REF–Query Pair로 연결합니다.",
+      text: "내 PC에서 이미지 폴더를 선택해 업로드합니다. 폴더는 계속 추가할 수 있습니다.",
       route: "/",
       complete: !!project.root_directory,
       label: "Overview",

@@ -3,6 +3,7 @@ export interface Project {
   name: string;
   description: string;
   root_directory: string;
+  data_directories: string[];
   created_at: string;
   pair_count: number;
   enabled_count: number;
@@ -158,6 +159,50 @@ export interface History {
   after: { x: number | null; y: number | null };
   reason: string;
   created_at: string;
+}
+
+export interface ImportResult {
+  new_pairs: number;
+  updated_pairs: number;
+  invalid_pairs: number;
+  images: number;
+}
+
+export function uploadFolder(
+  projectId: string,
+  files: File[],
+  progress: (percent: number) => void,
+  groupFoldersAsClasses = true,
+): Promise<ImportResult> {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file, file.webkitRelativePath));
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(
+      "POST",
+      `/api/projects/${projectId}/upload?group_folders_as_classes=${groupFoldersAsClasses}`,
+    );
+    request.responseType = "json";
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable)
+        progress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onerror = () =>
+      reject(new Error("업로드 연결이 끊겼습니다. 서버 연결을 확인하세요."));
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300)
+        resolve(request.response as ImportResult);
+      else
+        reject(
+          new Error(
+            typeof request.response?.detail === "string"
+              ? request.response.detail
+              : `폴더 업로드 실패 (${request.status})`,
+          ),
+        );
+    };
+    request.send(form);
+  });
 }
 
 export async function api<T>(

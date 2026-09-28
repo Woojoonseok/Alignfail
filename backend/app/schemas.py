@@ -19,6 +19,7 @@ class ProjectInput(StrictModel):
 
 class ImportInput(StrictModel):
     root_directory: str = Field(min_length=1, max_length=4000)
+    group_folders_as_classes: bool = True
 
 
 class PairInput(StrictModel):

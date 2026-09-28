@@ -10,7 +10,7 @@ from .cleaning import clean_pixels, detect_markings, load_pixels
 from .database import session_dependency
 from .models import ImageCleanup, ImageRecord, Pair, Project, now, uid
 from .schemas import AutoCleanupInput, CleanupInput, CleanupSource
-from .storage import HashMismatch, active_cleanup, digest, inside, read_verified, sha
+from .storage import HashMismatch, active_cleanup, digest, inside_project, read_verified, sha
 
 
 def register_cleanup_routes(app, factory, write_lock):
@@ -21,7 +21,7 @@ def register_cleanup_routes(app, factory, write_lock):
         if not record:
             raise HTTPException(404, "이미지를 찾을 수 없습니다.")
         project = db.get(Project, record.project_id)
-        if not inside(record.file_path, project.root_directory):
+        if not inside_project(record.file_path, project):
             raise HTTPException(403, "데이터 폴더 외부 이미지는 처리하지 않습니다.")
         try:
             content = read_verified(record.file_path, record.file_hash)

@@ -239,3 +239,309 @@ def test_non_finite_gt_rejected_cleanly(client, tmp_path):
 
 def test_image_endpoint_rejects_unknown_host(client):
     assert client.get("/api/projects", headers={"host": "unrelated.example"}).status_code == 400
+
+
+def upload_images(client, pid, names, **options):
+    content = io.BytesIO()
+    Image.new("RGB", (64, 48), (60, 80, 120)).save(content, format="PNG")
+    return client.post(
+        f"/api/projects/{pid}/upload",
+        files=[("files", (name, content.getvalue(), "image/png")) for name in names],
+        params=options,
+    )
+
+
+def test_browser_folder_upload_reads_nested_images_and_pairs(client):
+    pid = client.post("/api/projects", json={"name": "Uploads"}).json()["id"]
+    response = upload_images(
+        client,
+        pid,
+        [
+            "사진/s_OM.png",
+            "사진/deep/e_SEM.png",
+            "사진/deep/second.png",
+            "사진/pair/REF.png",
+            "사진/pair/query.png",
+        ],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"new_pairs": 4, "updated_pairs": 0, "images": 5, "invalid_pairs": 0}
+    rows = {p["folder"]: p for p in pairs(client, pid)}
+    assert set(rows) == {"s_OM.png", "deep/e_SEM.png", "deep/second.png", "pair"}
+    assert rows["pair"]["reference"] is not None
+    assert rows["deep/second.png"]["reference"] is None
+    for row in rows.values():
+        assert client.get(f"/api/images/{row['query']['id']}").status_code == 200
+
+
+def test_upload_appends_same_named_folder_preserving_existing_gt(client, tmp_path):
+    root = tmp_path / "original"
+    make_pair(root)
+    pid = project(client, root)
+    first = save(client, pairs(client, pid)[0], gt_x=10, gt_y=12, group_key="capture").json()
+    for _ in range(2):
+        response = upload_images(client, pid, ["images/query.png"])
+        assert response.status_code == 200, response.text
+    rows = pairs(client, pid)
+    assert len(rows) == 3
+    original = next(p for p in rows if p["id"] == first["id"])
+    assert original == first
+    assert len({p["folder"] for p in rows}) == 3
+    assert len(client.get("/api/projects").json()[0]["data_directories"]) == 3
+    for p in rows:
+        assert client.get(f"/api/images/{p['query']['id']}").status_code == 200
+    assert (root / "pair_001" / "query.bmp").is_file()
+
+
+def test_import_second_source_and_rescan_only_that_source(client, tmp_path):
+    root = tmp_path / "first"
+    make_pair(root)
+    pid = project(client, root)
+    first = save(client, pairs(client, pid)[0], gt_x=10, gt_y=12).json()
+    other = tmp_path / "second"
+    folder = make_pair(other)
+    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(other)})
+    assert response.status_code == 200
+    second = next(p for p in pairs(client, pid) if p["id"] != first["id"])
+    second = save(client, second, gt_x=2, gt_y=3).json()
+    Image.new("RGB", (120, 80), "white").save(folder / "query.bmp")
+    client.post(f"/api/projects/{pid}/import", json={"root_directory": str(other)})
+    after = {p["id"]: p for p in pairs(client, pid)}
+    assert after[first["id"]] == first
+    assert after[second["id"]]["gt_x"] is None
+    shutil.rmtree(folder)
+    client.post(f"/api/projects/{pid}/import", json={"root_directory": str(other)})
+    after = {p["id"]: p for p in pairs(client, pid)}
+    assert after[first["id"]] == first
+    assert after[second["id"]]["import_issues"]
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ["../escape.png"],
+        ["images/../../escape.png"],
+        ["/images/a.png"],
+        ["C:/images/a.png"],
+        ["images/a.png", "images/A.png"],
+        ["a/image.png", "b/image.png"],
+        ["images/CON.png"],
+        ["images/a:b.png"],
+    ],
+)
+def test_upload_rejects_invalid_paths_without_registration(client, names):
+    pid = client.post("/api/projects", json={"name": "Uploads"}).json()["id"]
+    response = upload_images(client, pid, names)
+    assert response.status_code == 422, response.text
+    assert pairs(client, pid) == []
+    assert client.get("/api/projects").json()[0]["data_directories"] == []
+    assert not list((client.app.state.state_dir / "uploads").rglob("*.png"))
+
+
+def test_upload_single_pair_folder_and_ambiguous_ref(client):
+    pid = client.post("/api/projects", json={"name": "Uploads"}).json()["id"]
+    result = upload_images(client, pid, ["pair/REF.png", "pair/query.png"])
+    assert result.status_code == 200
+    row = pairs(client, pid)[0]
+    assert row["reference"] is not None and row["query"] is not None
+    assert result.json()["new_pairs"] == 1
+    result = upload_images(client, pid, ["bad/REF.png", "bad/a.png", "bad/b.png"])
+    assert result.status_code == 200 and result.json()["invalid_pairs"] == 1
+    assert next(p for p in pairs(client, pid) if p["id"] != row["id"])["query"] is None
+
+
+def test_upload_no_images_unknown_project_and_external_origin(client):
+    pid = client.post("/api/projects", json={"name": "Uploads"}).json()["id"]
+    assert upload_images(client, pid, ["folder/notes.txt"]).status_code == 422
+    assert upload_images(client, "missing", ["folder/image.png"]).status_code == 404
+    response = client.post(f"/api/projects/{pid}/upload", headers={"origin": "https://example.com"})
+    assert response.status_code == 403
+
+
+def test_import_rejects_overlapping_sources_and_blank_path(client, tmp_path):
+    root = tmp_path / "images"
+    folder = make_pair(root)
+    pid = project(client, root)
+    for path, status in [(folder, 409), (tmp_path, 409), (" ", 422)]:
+        response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(path)})
+        assert response.status_code == status
+    assert len(pairs(client, pid)) == 1
+
+
+def test_ref_removed_on_rescan_keeps_pair_identity(client, tmp_path):
+    root = tmp_path / "images"
+    folder = make_pair(root)
+    pid = project(client, root)
+    first = save(client, pairs(client, pid)[0], gt_x=2, gt_y=3).json()
+    (folder / "sample_rEf.png").unlink()
+    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)})
+    assert response.status_code == 200
+    after = pairs(client, pid)
+    assert len(after) == 1 and after[0]["id"] == first["id"]
+    assert after[0]["gt_x"] == 2 and after[0]["reference"] is None
+
+
+def test_existing_database_upgrade_preserves_pairs_and_gt(tmp_path):
+    import sqlite3
+
+    root = tmp_path / "images"
+    make_pair(root)
+    state = tmp_path / "legacy-state"
+    app = create_app(state)
+    with TestClient(app) as client:
+        pid = project(client, root)
+        first = save(client, pairs(client, pid)[0], gt_x=10, gt_y=12).json()
+    app.state.engine.dispose()
+    with sqlite3.connect(state / "studio.db") as db:
+        db.execute("ALTER TABLE projects DROP COLUMN data_directories")
+        db.execute("ALTER TABLE pairs DROP COLUMN source_directory")
+    updated = create_app(state)
+    with TestClient(updated) as client:
+        assert pairs(client, pid)[0] == first
+        assert client.get("/api/projects").json()[0]["data_directories"] == [str(root.resolve())]
+        assert upload_images(client, pid, ["more/query.png"]).status_code == 200
+        assert next(p for p in pairs(client, pid) if p["id"] == first["id"]) == first
+        assert client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)}).status_code == 200
+        assert next(p for p in pairs(client, pid) if p["id"] == first["id"])["gt_x"] == 10
+    updated.state.engine.dispose()
+
+
+def test_upload_group_folders_become_classes_for_images_and_pairs(client):
+    pid = client.post("/api/projects", json={"name": "Group classes"}).json()["id"]
+    response = upload_images(
+        client,
+        pid,
+        [
+            "dataset/Group_001/a.png",
+            "dataset/Group_001/deeper/b.png",
+            "dataset/Group_002/pair/REF.png",
+            "dataset/Group_002/pair/query.png",
+            "dataset/Group_001/Group_003/c.png",
+            "dataset/ordinary/Group_004.png",
+            "dataset/Group_/d.png",
+        ],
+    )
+    assert response.status_code == 200, response.text
+    rows = {p["folder"]: p for p in pairs(client, pid)}
+    assert rows["Group_001/a.png"]["class_label"] == "Group_001"
+    assert rows["Group_001/deeper/b.png"]["class_label"] == "Group_001"
+    assert rows["Group_002/pair"]["class_label"] == "Group_002"
+    assert rows["Group_002/pair"]["reference"] is not None
+    assert rows["Group_001/Group_003/c.png"]["class_label"] == "Group_003"
+    assert rows["ordinary/Group_004.png"]["class_label"] == ""
+    assert rows["Group_/d.png"]["class_label"] == ""
+    assert all(p["group_key"] == "" for p in rows.values())
+    summary = client.get(f"/api/projects/{pid}/classes").json()
+    assert {c["class_label"]: c["count"] for c in summary["classes"]} == {
+        "Group_001": 2,
+        "Group_002": 1,
+        "Group_003": 1,
+    }
+    assert summary["unassigned"] == 2
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_upload_selected_group_root_and_class_option(client, enabled):
+    pid = client.post("/api/projects", json={"name": "Group classes"}).json()["id"]
+    for _ in range(2):
+        response = upload_images(client, pid, ["gRoUp_007/a.png"], group_folders_as_classes=enabled)
+        assert response.status_code == 200, response.text
+    rows = pairs(client, pid)
+    assert len(rows) == 2
+    assert all(p["class_label"] == ("gRoUp_007" if enabled else "") for p in rows)
+    summary = client.get(f"/api/projects/{pid}/classes").json()
+    assert len(summary["classes"]) == (1 if enabled else 0)
+    if enabled:
+        assert summary["classes"][0]["count"] == 2
+
+
+def test_group_rescan_fills_unclassified_preserving_existing_class_gt_and_group(client, tmp_path):
+    root = tmp_path / "dataset"
+    make_pair(root / "Group_001", "pair_a")
+    make_pair(root / "Group_002", "pair_b")
+    pid = client.post("/api/projects", json={"name": "Group classes"}).json()["id"]
+    response = client.post(
+        f"/api/projects/{pid}/import",
+        json={
+            "root_directory": str(root),
+            "group_folders_as_classes": False,
+        },
+    )
+    assert response.status_code == 200
+    first, second = pairs(client, pid)
+    assert first["class_label"] == second["class_label"] == ""
+    first = save(client, first, class_label="Reviewed", gt_x=4, gt_y=5, group_key="capture-1").json()
+    second = save(client, second, gt_x=6, gt_y=7, group_key="capture-2").json()
+    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)})
+    assert response.status_code == 200
+    after = {p["id"]: p for p in pairs(client, pid)}
+    assert after[first["id"]]["class_label"] == "Reviewed"
+    assert after[second["id"]]["class_label"] == "Group_002"
+    for before in (first, second):
+        for key in ("gt_x", "gt_y", "gt_source", "group_key"):
+            assert after[before["id"]][key] == before[key]
+        assert len(client.get(f"/api/pairs/{before['id']}/history").json()) == 1
+    client.post(
+        f"/api/projects/{pid}/import",
+        json={
+            "root_directory": str(root),
+            "group_folders_as_classes": False,
+        },
+    )
+    assert [p["class_label"] for p in pairs(client, pid)] == ["Reviewed", "Group_002"]
+
+
+def test_group_class_does_not_use_ancestors_outside_selected_root(client, tmp_path):
+    root = tmp_path / "Group_Outside" / "selected"
+    make_pair(root)
+    pid = project(client, root)
+    assert pairs(client, pid)[0]["class_label"] == ""
+
+
+@pytest.mark.parametrize("group_root", ["Group", "group", "dataset/Group"])
+def test_group_container_class_covers_mixed_pair_and_image_folders(client, group_root):
+    pid = client.post("/api/projects", json={"name": "Mixed Group"}).json()["id"]
+    response = upload_images(
+        client,
+        pid,
+        [
+            f"{group_root}/폴더123123/이미지.png",
+            f"{group_root}/폴더123123/이미지_REF.png",
+            f"{group_root}/폴더2/이미지1.png",
+            f"{group_root}/폴더2/이미지2.png",
+            f"{group_root}/폴더3/deep/이미지3.png",
+        ],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["new_pairs"] == 4
+    assert response.json()["invalid_pairs"] == 0
+    rows = pairs(client, pid)
+    label = group_root.split("/")[-1]
+    assert {row["class_label"] for row in rows} == {label}
+    assert sum(row["reference"] is not None for row in rows) == 1
+    assert all(row["query"] is not None for row in rows)
+    summary = client.get(f"/api/projects/{pid}/classes").json()
+    assert [(c["class_label"], c["count"]) for c in summary["classes"]] == [(label, 4)]
+    assert summary["unassigned"] == 0
+
+
+def test_plain_group_rescan_fills_class_without_changing_pair_or_gt(client, tmp_path):
+    root = tmp_path / "Group"
+    make_pair(root, "폴더123123")
+    pid = client.post("/api/projects", json={"name": "Group rescan"}).json()["id"]
+    response = client.post(
+        f"/api/projects/{pid}/import",
+        json={
+            "root_directory": str(root),
+            "group_folders_as_classes": False,
+        },
+    )
+    assert response.status_code == 200
+    first = save(client, pairs(client, pid)[0], gt_x=10, gt_y=12).json()
+    assert first["class_label"] == ""
+    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)})
+    assert response.status_code == 200
+    after = pairs(client, pid)[0]
+    assert after["id"] == first["id"]
+    assert after["class_label"] == "Group"
+    assert (after["gt_x"], after["gt_y"]) == (10, 12)

@@ -27,6 +27,7 @@ def create_database(state_dir: Path):
             connection.execute(text("ALTER TABLE pairs ADD COLUMN pattern_type VARCHAR(10) NOT NULL DEFAULT 'unknown'"))
     columns = {c["name"] for c in inspect(engine).get_columns("pairs")}
     additions = {
+        "source_directory": "TEXT NOT NULL DEFAULT ''",
         "class_label": "VARCHAR(200) NOT NULL DEFAULT ''",
         "modality": "VARCHAR(10) NOT NULL DEFAULT ''",
         "match_result": "VARCHAR(10) NOT NULL DEFAULT 'unknown'",
@@ -35,6 +36,17 @@ def create_database(state_dir: Path):
         if name not in columns:
             with engine.begin() as connection:
                 connection.execute(text(f"ALTER TABLE pairs ADD COLUMN {name} {definition}"))
+    if "data_directories" not in {c["name"] for c in inspect(engine).get_columns("projects")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE projects ADD COLUMN data_directories JSON NOT NULL DEFAULT '[]'"))
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE pairs SET source_directory = "
+                "(SELECT root_directory FROM projects WHERE projects.id = pairs.project_id) "
+                "WHERE source_directory = ''"
+            )
+        )
     return engine, sessionmaker(engine, expire_on_commit=False)
 
 

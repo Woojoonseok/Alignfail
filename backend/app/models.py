@@ -21,6 +21,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
     root_directory: Mapped[str] = mapped_column(Text, default="")
+    data_directories: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[str] = mapped_column(String(40), default=now)
 
 
@@ -46,6 +47,7 @@ class Pair(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     folder: Mapped[str] = mapped_column(Text)
+    source_directory: Mapped[str] = mapped_column(Text, default="")
     reference_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     query_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     gt_x: Mapped[float | None] = mapped_column(Float, nullable=True)
