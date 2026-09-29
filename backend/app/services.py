@@ -85,9 +85,6 @@ def directory_items(root: Path, paired_folders: set[Path]):
 
 
 def import_directory(db, project, root: Path, *, dataset_split: str | None = None):
-    class_label = root.name.strip()
-    if not class_label or len(class_label) > 200:
-        raise HTTPException(422, "클래스로 사용할 폴더 이름은 1~200자여야 합니다.")
     source_pairs = list(
         db.scalars(select(Pair).where(Pair.project_id == project.id, Pair.source_directory == str(root)))
     )
@@ -114,6 +111,10 @@ def import_directory(db, project, root: Path, *, dataset_split: str | None = Non
     counts = {"new_pairs": 0, "updated_pairs": 0, "images": 0, "invalid_pairs": 0}
     seen_folders = set()
     for entry, files, paired in directory_items(root, paired_folders):
+        relative_folder = (entry if paired else entry.parent).relative_to(root)
+        class_label = (relative_folder.parts[0] if relative_folder.parts else root.name).strip()
+        if not class_label or len(class_label) > 200:
+            raise HTTPException(422, "클래스로 사용할 폴더 이름은 1~200자여야 합니다.")
         name = prefix + (entry.relative_to(root).as_posix() if entry != root else ".")
         seen_folders.add(name)
         pair = pairs.get(name)

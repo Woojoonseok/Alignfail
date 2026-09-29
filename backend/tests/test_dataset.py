@@ -408,29 +408,30 @@ def test_existing_database_upgrade_preserves_pairs_and_gt(tmp_path):
 
 
 @pytest.mark.parametrize("split", ["train", "test"])
-def test_upload_folder_is_one_class_for_all_nested_images_and_pairs(client, split):
+def test_upload_child_folders_are_classes_for_nested_images_and_pairs(client, split):
     pid = client.post("/api/projects", json={"name": "Folder classes"}).json()["id"]
     response = upload_images(
         client,
         pid,
         [
-            "결함A/Group (1)/a.png",
-            "결함A/Group_002/b.png",
-            "결함A/pair/이미지_REF.png",
-            "결함A/pair/이미지.png",
-            "결함A/deep/nested/c.png",
+            "데이터/Group (1)/a.png",
+            "데이터/Group_002/b.png",
+            "데이터/Group (1)/pair/이미지_REF.png",
+            "데이터/Group (1)/pair/이미지.png",
+            "데이터/결함A/deep/nested/c.png",
         ],
         dataset_split=split,
     )
     assert response.status_code == 200, response.text
     assert response.json()["new_pairs"] == 4 and response.json()["invalid_pairs"] == 0
     rows = pairs(client, pid)
-    assert {p["class_label"] for p in rows} == {"결함A"}
+    assert {p["class_label"] for p in rows} == {"Group (1)", "Group_002", "결함A"}
+    assert all(p["class_label"] == p["folder"].split("/")[0] for p in rows)
     assert {p["dataset_split"] for p in rows} == {split}
     assert all(p["group_key"] == "" for p in rows)
     assert sum(p["reference"] is not None for p in rows) == 1
     summary = client.get(f"/api/projects/{pid}/classes").json()
-    assert [(c["class_label"], c["count"]) for c in summary["classes"]] == [("결함A", 4)]
+    assert {c["class_label"]: c["count"] for c in summary["classes"]} == {"Group (1)": 2, "Group_002": 1, "결함A": 1}
     registered = client.get("/api/projects").json()[0]
     assert registered[f"{split}_count"] == 4
 
@@ -467,7 +468,7 @@ def test_source_rescan_preserves_split_class_and_gt_for_new_and_existing_items(c
     assert {p["dataset_split"] for p in rows} == {"test"}
     after = next(p for p in rows if p["id"] == first["id"])
     assert (after["class_label"], after["gt_x"], after["gt_y"], after["group_key"]) == ("Reviewed", 10, 12, "capture")
-    assert next(p for p in rows if p["id"] != first["id"])["class_label"] == root.name
+    assert next(p for p in rows if p["id"] != first["id"])["class_label"] == "second"
     response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root), "dataset_split": "train"})
     assert response.status_code == 409
     assert {p["dataset_split"] for p in pairs(client, pid)} == {"test"}

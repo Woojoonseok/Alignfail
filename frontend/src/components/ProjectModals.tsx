@@ -107,6 +107,14 @@ export function ImportModal({
       ),
   });
   const folderName = files[0]?.webkitRelativePath.split("/")[0];
+  const classNames = Array.from(
+    new Set(
+      files.map((file) => {
+        const parts = file.webkitRelativePath.split("/");
+        return (parts.length > 2 ? parts[1] : parts[0]).trim();
+      }),
+    ),
+  );
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   return (
     <Modal
@@ -146,8 +154,10 @@ export function ImportModal({
           </button>
         </div>
         <p className="modal-description">
-          폴더 하나가 클래스 하나입니다. 선택한 폴더 이름이 클래스가 되며, 하위
-          폴더의 REF/Query 쌍과 일반 이미지도 모두 같은 클래스로 가져옵니다.
+          클래스 폴더들이 들어 있는 상위 폴더를 선택하세요. 바로 아래 폴더
+          이름을 각각 클래스로 인식하며, 그 안의 모든 하위 이미지도 같은
+          클래스에 포함합니다. 선택한 폴더 바로 안에 있는 이미지는 선택한 폴더
+          이름을 클래스로 사용합니다.
           {datasetSplit === "train"
             ? " Train 데이터는 학습과 Validation에 사용합니다."
             : " Test 데이터는 평가용으로 따로 보관하며 학습과 Validation에 사용하지 않습니다."}
@@ -172,8 +182,13 @@ export function ImportModal({
                 setSelectionError(
                   !images.length
                     ? "선택한 폴더에 지원하는 이미지가 없습니다."
-                    : images[0].webkitRelativePath.split("/")[0].trim().length >
-                        200
+                    : images.some((file) => {
+                          const parts = file.webkitRelativePath.split("/");
+                          const name = (
+                            parts.length > 2 ? parts[1] : parts[0]
+                          ).trim();
+                          return !name || name.length > 200;
+                        })
                       ? "클래스로 사용할 폴더 이름은 200자 이하여야 합니다."
                       : images.length > 10000
                         ? "한 번에 이미지 10,000장까지 업로드할 수 있습니다."
@@ -275,7 +290,8 @@ export function ImportModal({
           <div className="notice" role="status">
             <FolderInput size={16} />
             <span>
-              클래스: <strong>{folderName}</strong> · 용도:{" "}
+              인식된 클래스 {classNames.length}개:{" "}
+              <strong>{classNames.join(", ")}</strong> · 용도:{" "}
               <strong>{splitLabel}</strong>
             </span>
           </div>

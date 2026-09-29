@@ -132,4 +132,4 @@ ALIGNFAIL_TEST_TRAINING_PYTHON="$PWD/.training-venv/bin/python" .venv/bin/python
 
 ### Train / Test 업로드 구분
 
-상단의 Train/Test 업로드 버튼으로 클래스 폴더를 각각 등록합니다. 선택한 폴더 하나가 클래스 하나입니다. Test는 별도 저장하며, 학습 입력 준비와 Group Fold의 Train/Validation 분리는 Train 업로드에만 적용됩니다. Test는 모델 선택·crop 진단에 사용하지 않습니다. 기존 데이터와 구버전 manifest는 Train으로 취급합니다. 현재 결과표는 Validation 결과이며, 별도 Test 추론·평가 화면은 후속 범위입니다.
+상단의 Train/Test 업로드 버튼으로 클래스 폴더들이 들어 있는 상위 폴더를 등록합니다. 바로 아래 폴더 이름이 각각 클래스가 되며, 더 깊은 하위 이미지도 해당 클래스에 포함합니다. Test는 별도 저장하며, 학습 입력 준비와 Group Fold의 Train/Validation 분리는 Train 업로드에만 적용됩니다. Test는 모델 선택·crop 진단에 사용하지 않습니다. 기존 데이터와 구버전 manifest는 Train으로 취급합니다. 현재 결과표는 Validation 결과이며, 별도 Test 추론·평가 화면은 후속 범위입니다.
