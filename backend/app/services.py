@@ -84,23 +84,17 @@ def directory_items(root: Path, paired_folders: set[Path]):
             yield from directory_items(folder, paired_folders)
 
 
-def group_folder_class(root: Path, folder: Path) -> str:
-    """Use the nearest Group, Group_* or Group (number) folder within the source."""
-    names = (root.name, *folder.relative_to(root).parts)
-    for name in reversed(names):
-        if (
-            name.lower() == "group"
-            or (name.lower().startswith("group_") and name[6:].strip())
-            or re.fullmatch(r"group\s*\(\s*[0-9]+\s*\)", name, re.IGNORECASE)
-        ):
-            label = name.strip()
-            if len(label) > 200:
-                raise HTTPException(422, "Group 폴더의 클래스 이름은 200자 이하여야 합니다.")
-            return label
-    return ""
-
-
-def import_directory(db, project, root: Path, *, group_folders_as_classes: bool = True):
+def import_directory(db, project, root: Path, *, dataset_split: str | None = None):
+    class_label = root.name.strip()
+    if not class_label or len(class_label) > 200:
+        raise HTTPException(422, "클래스로 사용할 폴더 이름은 1~200자여야 합니다.")
+    source_pairs = list(
+        db.scalars(select(Pair).where(Pair.project_id == project.id, Pair.source_directory == str(root)))
+    )
+    existing_splits = {p.dataset_split for p in source_pairs}
+    if dataset_split is not None and existing_splits and existing_splits != {dataset_split}:
+        raise HTTPException(409, "이미 다른 용도로 등록한 폴더입니다. 재검색은 기존 Train/Test 구분을 유지합니다.")
+    selected_split = dataset_split or next(iter(existing_splits), "train")
     roots = project_directories(project)
     if str(root) not in roots:
         if any(root.is_relative_to(Path(p)) or Path(p).is_relative_to(root) for p in roots):
@@ -126,14 +120,14 @@ def import_directory(db, project, root: Path, *, group_folders_as_classes: bool 
         if pair is not None and (pair.source_directory or project.root_directory) != str(root):
             raise HTTPException(409, "등록 항목 이름이 충돌합니다. 폴더 이름을 변경해 다시 가져오세요.")
         if pair is None:
-            pair = Pair(project_id=project.id, folder=name, source_directory=str(root))
+            pair = Pair(project_id=project.id, folder=name, source_directory=str(root), dataset_split=selected_split)
             db.add(pair)
             db.flush()
             counts["new_pairs"] += 1
         else:
             counts["updated_pairs"] += 1
-        if group_folders_as_classes and not pair.class_label:
-            pair.class_label = group_folder_class(root, entry if paired else entry.parent)
+        if not pair.class_label:
+            pair.class_label = class_label
         old_query_id = pair.query_image_id
         old_query = db.get(ImageRecord, old_query_id) if old_query_id else None
         old_hash = old_query.file_hash if old_query else None
@@ -246,6 +240,7 @@ def pair_dict(db, pair):
             "gt_source",
             "group_key",
             "class_label",
+            "dataset_split",
             "modality",
             "match_result",
             "tier",
@@ -281,8 +276,11 @@ def pair_dict(db, pair):
     return result
 
 
-def audit_dataset(db, project_id):
-    pairs = list(db.scalars(select(Pair).where(Pair.project_id == project_id).order_by(Pair.folder)))
+def audit_dataset(db, project_id, dataset_split=None):
+    statement = select(Pair).where(Pair.project_id == project_id)
+    if dataset_split:
+        statement = statement.where(Pair.dataset_split == dataset_split)
+    pairs = list(db.scalars(statement.order_by(Pair.folder)))
     issues = []
     hashes = defaultdict(list)
     checked = {}
@@ -346,7 +344,7 @@ def audit_dataset(db, project_id):
                 )
         query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
         if pair.gt_x is None or pair.gt_y is None:
-            add(pair, "MISSING_GT", "Query GT를 지정하세요.")
+            add(pair, "MISSING_GT", "Query GT를 지정하세요.", "warning" if pair.dataset_split == "test" else "error")
         elif (
             query
             and query.width
@@ -354,7 +352,7 @@ def audit_dataset(db, project_id):
             and not (0 <= pair.gt_x < query.width and 0 <= pair.gt_y < query.height)
         ):
             add(pair, "INVALID_GT", "GT가 원본 이미지 범위를 벗어났습니다.")
-        if pair.enabled and not pair.group_key:
+        if pair.enabled and pair.dataset_split == "train" and not pair.group_key:
             add(pair, "GROUP_UNASSIGNED", "데이터 그룹 미지정: Split 생성 전에 연관 Pair를 묶어야 합니다.", "warning")
         if pair.enabled and pair.gt_source == "auto_cross":
             add(

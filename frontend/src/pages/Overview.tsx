@@ -250,7 +250,7 @@ export function Overview({
         <span>DATA FOLDERS</span>
         <code>
           {project.data_directories.length
-            ? `등록한 폴더 ${project.data_directories.length}개`
+            ? `클래스 폴더 ${project.data_directories.length}개 · Train ${project.train_count}개 · Test ${project.test_count}개`
             : "아직 가져온 폴더가 없습니다."}
         </code>
         <span className="path-end">업로드 · 경로 연결</span>

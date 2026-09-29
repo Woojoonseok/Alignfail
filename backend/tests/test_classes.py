@@ -95,8 +95,10 @@ def test_template_match_attach_links_ref_and_respects_modality(template_client):
         res = client.put(f"/api/projects/{pid}/classes/{label}/template", json={"image_id": p["reference"]["id"]})
         assert res.status_code == 200 and res.json()["image"]["id"] == p["reference"]["id"]
     classes = client.get(f"/api/projects/{pid}/classes").json()
-    assert [c["class_label"] for c in classes["classes"]] == ["horizontal", "vertical"]
-    assert classes["unlinked"] == 2 and all(c["template"] for c in classes["classes"])
+    assert [c["class_label"] for c in classes["classes"]] == ["Dada", "horizontal", "vertical"]
+    assert classes["unlinked"] == 2
+    assert classes["classes"][0]["count"] == 2 and classes["classes"][0]["template"] is None
+    assert all(c["template"] for c in classes["classes"] if c["class_label"] != "Dada")
     # Query-only exports rank the template whose appearance matches first.
     current = {p["folder"]: p for p in client.get(f"/api/projects/{pid}/pairs").json()}
     loose = [current["s_export_OM.png"], current["e_export_OM.png"]]

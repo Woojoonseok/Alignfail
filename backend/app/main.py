@@ -86,6 +86,8 @@ def create_app(state_dir: Path | None = None):
             "data_directories": project_directories(project),
             "created_at": project.created_at,
             "pair_count": len(pairs),
+            "train_count": sum(p.dataset_split == "train" for p in pairs),
+            "test_count": sum(p.dataset_split == "test" for p in pairs),
             "enabled_count": sum(p.enabled for p in pairs),
             "annotated_count": sum(p.enabled and p.gt_x is not None for p in pairs),
             "issue_count": sum(bool(p.import_issues) for p in pairs),
@@ -151,7 +153,7 @@ def create_app(state_dir: Path | None = None):
                     422, "폴더를 찾을 수 없습니다. 서버에서 접근 가능한 경로를 입력하세요. WSL 예: /mnt/d/Dada"
                 )
             try:
-                result = import_directory(db, project, root, group_folders_as_classes=data.group_folders_as_classes)
+                result = import_directory(db, project, root, dataset_split=data.dataset_split)
                 db.commit()
             except OSError as exc:
                 db.rollback()
@@ -287,9 +289,9 @@ def create_app(state_dir: Path | None = None):
     def create_version(project_id: str, data: VersionInput, db: Session = Depends(session)):
         with write_lock:
             project = get_project(db, project_id)
-            audit = audit_dataset(db, project_id)
+            audit = audit_dataset(db, project_id, dataset_split="train")
             if not audit["passed"]:
-                raise HTTPException(422, "활성 Pair의 파일·GT 오류를 해결해야 버전을 생성할 수 있습니다.")
+                raise HTTPException(422, "활성 Train 데이터의 파일·GT 오류를 해결해야 버전을 생성할 수 있습니다.")
             pairs = [
                 pair_dict(db, p)
                 for p in db.scalars(select(Pair).where(Pair.project_id == project_id).order_by(Pair.folder))
@@ -350,6 +352,7 @@ def create_app(state_dir: Path | None = None):
                         "class_label",
                         "modality",
                         "match_result",
+                        "dataset_split",
                         "pattern_type",
                         "reference_annotation",
                         "tier",

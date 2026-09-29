@@ -395,6 +395,7 @@ def test_existing_database_upgrade_preserves_pairs_and_gt(tmp_path):
     with sqlite3.connect(state / "studio.db") as db:
         db.execute("ALTER TABLE projects DROP COLUMN data_directories")
         db.execute("ALTER TABLE pairs DROP COLUMN source_directory")
+        db.execute("ALTER TABLE pairs DROP COLUMN dataset_split")
     updated = create_app(state)
     with TestClient(updated) as client:
         assert pairs(client, pid)[0] == first
@@ -406,168 +407,84 @@ def test_existing_database_upgrade_preserves_pairs_and_gt(tmp_path):
     updated.state.engine.dispose()
 
 
-def test_upload_group_folders_become_classes_for_images_and_pairs(client):
-    pid = client.post("/api/projects", json={"name": "Group classes"}).json()["id"]
+@pytest.mark.parametrize("split", ["train", "test"])
+def test_upload_folder_is_one_class_for_all_nested_images_and_pairs(client, split):
+    pid = client.post("/api/projects", json={"name": "Folder classes"}).json()["id"]
     response = upload_images(
         client,
         pid,
         [
-            "dataset/Group_001/a.png",
-            "dataset/Group_001/deeper/b.png",
-            "dataset/Group_002/pair/REF.png",
-            "dataset/Group_002/pair/query.png",
-            "dataset/Group_001/Group_003/c.png",
-            "dataset/ordinary/Group_004.png",
-            "dataset/Group_/d.png",
+            "결함A/Group (1)/a.png",
+            "결함A/Group_002/b.png",
+            "결함A/pair/이미지_REF.png",
+            "결함A/pair/이미지.png",
+            "결함A/deep/nested/c.png",
         ],
+        dataset_split=split,
     )
     assert response.status_code == 200, response.text
-    rows = {p["folder"]: p for p in pairs(client, pid)}
-    assert rows["Group_001/a.png"]["class_label"] == "Group_001"
-    assert rows["Group_001/deeper/b.png"]["class_label"] == "Group_001"
-    assert rows["Group_002/pair"]["class_label"] == "Group_002"
-    assert rows["Group_002/pair"]["reference"] is not None
-    assert rows["Group_001/Group_003/c.png"]["class_label"] == "Group_003"
-    assert rows["ordinary/Group_004.png"]["class_label"] == ""
-    assert rows["Group_/d.png"]["class_label"] == ""
-    assert all(p["group_key"] == "" for p in rows.values())
-    summary = client.get(f"/api/projects/{pid}/classes").json()
-    assert {c["class_label"]: c["count"] for c in summary["classes"]} == {
-        "Group_001": 2,
-        "Group_002": 1,
-        "Group_003": 1,
-    }
-    assert summary["unassigned"] == 2
-
-
-@pytest.mark.parametrize("enabled", [True, False])
-def test_upload_selected_group_root_and_class_option(client, enabled):
-    pid = client.post("/api/projects", json={"name": "Group classes"}).json()["id"]
-    for _ in range(2):
-        response = upload_images(client, pid, ["gRoUp_007/a.png"], group_folders_as_classes=enabled)
-        assert response.status_code == 200, response.text
+    assert response.json()["new_pairs"] == 4 and response.json()["invalid_pairs"] == 0
     rows = pairs(client, pid)
-    assert len(rows) == 2
-    assert all(p["class_label"] == ("gRoUp_007" if enabled else "") for p in rows)
+    assert {p["class_label"] for p in rows} == {"결함A"}
+    assert {p["dataset_split"] for p in rows} == {split}
+    assert all(p["group_key"] == "" for p in rows)
+    assert sum(p["reference"] is not None for p in rows) == 1
     summary = client.get(f"/api/projects/{pid}/classes").json()
-    assert len(summary["classes"]) == (1 if enabled else 0)
-    if enabled:
-        assert summary["classes"][0]["count"] == 2
+    assert [(c["class_label"], c["count"]) for c in summary["classes"]] == [("결함A", 4)]
+    registered = client.get("/api/projects").json()[0]
+    assert registered[f"{split}_count"] == 4
 
 
-def test_group_rescan_fills_unclassified_preserving_existing_class_gt_and_group(client, tmp_path):
-    root = tmp_path / "dataset"
-    make_pair(root / "Group_001", "pair_a")
-    make_pair(root / "Group_002", "pair_b")
-    pid = client.post("/api/projects", json={"name": "Group classes"}).json()["id"]
-    response = client.post(
-        f"/api/projects/{pid}/import",
-        json={
-            "root_directory": str(root),
-            "group_folders_as_classes": False,
-        },
-    )
+def test_train_and_test_uploads_share_class_name_but_keep_separate_membership(client):
+    pid = client.post("/api/projects", json={"name": "Split classes"}).json()["id"]
+    for split in ["train", "test"]:
+        assert upload_images(client, pid, ["결함A/query.png"], dataset_split=split).status_code == 200
+    assert upload_images(client, pid, ["결함B/query.png"], dataset_split="train").status_code == 200
+    rows = pairs(client, pid)
+    assert {(p["class_label"], p["dataset_split"]) for p in rows} == {
+        ("결함A", "train"),
+        ("결함A", "test"),
+        ("결함B", "train"),
+    }
+    assert len({p["query"]["file_path"] for p in rows}) == 3
+    registered = client.get("/api/projects").json()[0]
+    assert (registered["train_count"], registered["test_count"], registered["class_count"]) == (2, 1, 2)
+    assert upload_images(client, pid, ["bad/a.png"], dataset_split="invalid").status_code == 422
+    assert len(pairs(client, pid)) == 3
+
+
+def test_source_rescan_preserves_split_class_and_gt_for_new_and_existing_items(client, tmp_path):
+    root = tmp_path / "아무폴더"
+    make_pair(root, "first")
+    pid = client.post("/api/projects", json={"name": "Rescan"}).json()["id"]
+    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root), "dataset_split": "test"})
     assert response.status_code == 200
-    first, second = pairs(client, pid)
-    assert first["class_label"] == second["class_label"] == ""
-    first = save(client, first, class_label="Reviewed", gt_x=4, gt_y=5, group_key="capture-1").json()
-    second = save(client, second, gt_x=6, gt_y=7, group_key="capture-2").json()
+    first = save(client, pairs(client, pid)[0], class_label="Reviewed", gt_x=10, gt_y=12, group_key="capture").json()
+    make_pair(root, "second")
     response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)})
     assert response.status_code == 200
-    after = {p["id"]: p for p in pairs(client, pid)}
-    assert after[first["id"]]["class_label"] == "Reviewed"
-    assert after[second["id"]]["class_label"] == "Group_002"
-    for before in (first, second):
-        for key in ("gt_x", "gt_y", "gt_source", "group_key"):
-            assert after[before["id"]][key] == before[key]
-        assert len(client.get(f"/api/pairs/{before['id']}/history").json()) == 1
-    client.post(
-        f"/api/projects/{pid}/import",
-        json={
-            "root_directory": str(root),
-            "group_folders_as_classes": False,
-        },
-    )
-    assert [p["class_label"] for p in pairs(client, pid)] == ["Reviewed", "Group_002"]
+    rows = pairs(client, pid)
+    assert {p["dataset_split"] for p in rows} == {"test"}
+    after = next(p for p in rows if p["id"] == first["id"])
+    assert (after["class_label"], after["gt_x"], after["gt_y"], after["group_key"]) == ("Reviewed", 10, 12, "capture")
+    assert next(p for p in rows if p["id"] != first["id"])["class_label"] == root.name
+    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root), "dataset_split": "train"})
+    assert response.status_code == 409
+    assert {p["dataset_split"] for p in pairs(client, pid)} == {"test"}
 
 
-def test_group_class_does_not_use_ancestors_outside_selected_root(client, tmp_path):
-    root = tmp_path / "Group_Outside" / "selected"
+def test_versions_export_split_and_unannotated_test_does_not_block_train(client, tmp_path):
+    root = tmp_path / "train-class"
     make_pair(root)
     pid = project(client, root)
-    assert pairs(client, pid)[0]["class_label"] == ""
-
-
-@pytest.mark.parametrize(
-    "group_root", ["Group", "group", "dataset/Group", "Group (1)", "dataset/Group (2)", "gRoUp(3)", "Group ( 4 )"]
-)
-def test_group_container_class_covers_mixed_pair_and_image_folders(client, group_root):
-    pid = client.post("/api/projects", json={"name": "Mixed Group"}).json()["id"]
-    response = upload_images(
-        client,
-        pid,
-        [
-            f"{group_root}/폴더123123/이미지.png",
-            f"{group_root}/폴더123123/이미지_REF.png",
-            f"{group_root}/폴더2/이미지1.png",
-            f"{group_root}/폴더2/이미지2.png",
-            f"{group_root}/폴더3/deep/이미지3.png",
-        ],
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["new_pairs"] == 4
-    assert response.json()["invalid_pairs"] == 0
-    rows = pairs(client, pid)
-    label = group_root.split("/")[-1]
-    assert {row["class_label"] for row in rows} == {label}
-    assert sum(row["reference"] is not None for row in rows) == 1
-    assert all(row["query"] is not None for row in rows)
-    summary = client.get(f"/api/projects/{pid}/classes").json()
-    assert [(c["class_label"], c["count"]) for c in summary["classes"]] == [(label, 4)]
-    assert summary["unassigned"] == 0
-
-
-@pytest.mark.parametrize("group_name", ["Group", "Group (1)"])
-def test_plain_group_rescan_fills_class_without_changing_pair_or_gt(client, tmp_path, group_name):
-    root = tmp_path / group_name
-    make_pair(root, "폴더123123")
-    pid = client.post("/api/projects", json={"name": "Group rescan"}).json()["id"]
-    response = client.post(
-        f"/api/projects/{pid}/import",
-        json={
-            "root_directory": str(root),
-            "group_folders_as_classes": False,
-        },
-    )
-    assert response.status_code == 200
-    first = save(client, pairs(client, pid)[0], gt_x=10, gt_y=12).json()
-    assert first["class_label"] == ""
-    response = client.post(f"/api/projects/{pid}/import", json={"root_directory": str(root)})
-    assert response.status_code == 200
-    after = pairs(client, pid)[0]
-    assert after["id"] == first["id"]
-    assert after["class_label"] == group_name
-    assert (after["gt_x"], after["gt_y"]) == (10, 12)
-
-
-def test_numbered_group_upload_keeps_sibling_classes_separate(client):
-    pid = client.post("/api/projects", json={"name": "Numbered Groups"}).json()["id"]
-    response = upload_images(
-        client,
-        pid,
-        [
-            "dataset/Group (1)/folder123/이미지.png",
-            "dataset/Group (1)/folder123/이미지_REF.png",
-            "dataset/Group (1)/more/a.png",
-            "dataset/Group (1)/more/b.png",
-            "dataset/Group (2)/a.png",
-            "dataset/Group (2)/b.png",
-            "dataset/NotGroup (3)/c.png",
-            "dataset/Group (4) backup/d.png",
-        ],
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["invalid_pairs"] == 0
-    summary = client.get(f"/api/projects/{pid}/classes").json()
-    assert {c["class_label"]: c["count"] for c in summary["classes"]} == {"Group (1)": 3, "Group (2)": 2}
-    assert summary["unassigned"] == 2
+    save(client, pairs(client, pid)[0], gt_x=2, gt_y=3, group_key="capture")
+    assert upload_images(client, pid, ["test-class/a.png"], dataset_split="test").status_code == 200
+    result = client.post(f"/api/projects/{pid}/versions", json={"description": "with held-out test"})
+    assert result.status_code == 201, result.text
+    manifest = client.get(f"/api/versions/{result.json()['id']}/manifest").json()
+    assert {p["dataset_split"] for p in manifest["pairs"]} == {"train", "test"}
+    exported = client.get(f"/api/projects/{pid}/annotations").json()
+    assert {p["dataset_split"] for p in exported["pairs"]} == {"train", "test"}
+    audit = client.post(f"/api/projects/{pid}/audit").json()
+    assert audit["passed"]
+    assert any(i["code"] == "MISSING_GT" and i["severity"] == "warning" for i in audit["issues"])

@@ -103,7 +103,7 @@ export default function App() {
     enabled: !!project,
   });
   const [projectModal, setProjectModal] = useState(false);
-  const [importModal, setImportModal] = useState(false);
+  const [importModal, setImportModal] = useState<"train" | "test" | null>(null);
   const [toast, setToast] = useState("");
   const [unsaved, setUnsaved] = useState(false);
   const blocker = useBlocker(unsaved);
@@ -265,10 +265,17 @@ export default function App() {
                       ? "GT 변경을 저장하거나 되돌린 후 재검색하세요."
                       : undefined
                   }
-                  onClick={() => setImportModal(true)}
+                  onClick={() => setImportModal("train")}
                 >
                   <FolderInput size={17} />
-                  이미지 폴더 가져오기
+                  Train 폴더 업로드
+                </button>
+                <button
+                  className="button secondary"
+                  disabled={unsaved}
+                  onClick={() => setImportModal("test")}
+                >
+                  <FolderInput size={17} /> Test 폴더 업로드
                 </button>
               </div>
             )}
@@ -329,7 +336,7 @@ export default function App() {
                   <Overview
                     project={project}
                     pairs={pairsQuery.data ?? []}
-                    importData={() => setImportModal(true)}
+                    importData={() => setImportModal("train")}
                   />
                 }
               />
@@ -380,7 +387,7 @@ export default function App() {
                     project={project}
                     refresh={refresh}
                     notify={setToast}
-                    importData={() => setImportModal(true)}
+                    importData={() => setImportModal("train")}
                     deleted={() => chooseProject("")}
                   />
                 }
@@ -411,7 +418,7 @@ export default function App() {
             await refresh();
             chooseProject(id);
             setProjectModal(false);
-            setImportModal(true);
+            setImportModal("train");
             setToast("프로젝트가 생성되었습니다. 이미지 폴더를 선택하세요.");
           }}
         />
@@ -419,12 +426,13 @@ export default function App() {
       {importModal && project && (
         <ImportModal
           project={project}
-          close={() => setImportModal(false)}
-          imported={async (message) => {
+          datasetSplit={importModal}
+          close={() => setImportModal(null)}
+          imported={async (message, split) => {
             await refresh();
-            setImportModal(false);
+            setImportModal(null);
             setToast(message);
-            navigate("/pairs");
+            navigate(split ? `/pairs?split=${split}` : "/pairs");
           }}
         />
       )}

@@ -27,6 +27,7 @@ def create_database(state_dir: Path):
             connection.execute(text("ALTER TABLE pairs ADD COLUMN pattern_type VARCHAR(10) NOT NULL DEFAULT 'unknown'"))
     columns = {c["name"] for c in inspect(engine).get_columns("pairs")}
     additions = {
+        "dataset_split": "VARCHAR(10) NOT NULL DEFAULT 'train'",
         "source_directory": "TEXT NOT NULL DEFAULT ''",
         "class_label": "VARCHAR(200) NOT NULL DEFAULT ''",
         "modality": "VARCHAR(10) NOT NULL DEFAULT ''",

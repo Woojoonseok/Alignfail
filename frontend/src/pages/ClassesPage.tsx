@@ -55,10 +55,11 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
   const navigate = useNavigate();
   const client = useQueryClient();
   const { busy, error, run } = useAction();
-  const [role, setRole] = useState<"reference" | "query">("reference");
+  const [role, setRole] = useState<"reference" | "query">("query");
   const [size, setSize] = useState<Size>("medium");
   const [search, setSearch] = useState("");
   const [modality, setModality] = useState("");
+  const [datasetSplit, setDatasetSplit] = useState("");
   const [onlyUnlinked, setOnlyUnlinked] = useState(false);
   const [includeExcluded, setIncludeExcluded] = useState(false);
   const [selected, setSelected] = useState(new Set<string>());
@@ -86,12 +87,13 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
         (p) =>
           (includeExcluded || p.enabled) &&
           (!modality || p.modality === modality) &&
+          (!datasetSplit || p.dataset_split === datasetSplit) &&
           (!onlyUnlinked || !p.reference) &&
           `${p.folder} ${p.class_label} ${p.group_key}`
             .toLowerCase()
             .includes(search.toLowerCase()),
       ),
-    [pairs, includeExcluded, modality, onlyUnlinked, search],
+    [pairs, includeExcluded, modality, datasetSplit, onlyUnlinked, search],
   );
   const groups = useMemo(() => groupByClass(visible), [visible]);
   const classNames = useMemo(
@@ -244,6 +246,15 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <select
+            aria-label="클래스 Train/Test 구분"
+            value={datasetSplit}
+            onChange={(e) => setDatasetSplit(e.target.value)}
+          >
+            <option value="">Train + Test</option>
+            <option value="train">Train</option>
+            <option value="test">Test</option>
+          </select>
           <select
             aria-label="모달리티 필터"
             value={modality}
@@ -502,6 +513,9 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
                           </span>
                         )}
                         <span className="class-thumb-tags">
+                          <em>
+                            {p.dataset_split === "test" ? "Test" : "Train"}
+                          </em>
                           {p.modality && <em>{p.modality}</em>}
                           {p.match_result === "success" && <em>s</em>}
                           {p.match_result === "fail" && <em>e</em>}

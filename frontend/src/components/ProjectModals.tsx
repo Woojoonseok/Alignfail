@@ -68,12 +68,14 @@ export function ProjectModal({
 
 export function ImportModal({
   project,
+  datasetSplit,
   close,
   imported,
 }: {
   project: Project;
+  datasetSplit: "train" | "test";
   close: () => void;
-  imported: (message: string) => Promise<void>;
+  imported: (message: string, split?: "train" | "test") => Promise<void>;
 }) {
   const [mode, setMode] = useState<"upload" | "server">("upload");
   const [path, setPath] = useState("");
@@ -81,29 +83,34 @@ export function ImportModal({
   const [skipped, setSkipped] = useState(0);
   const [progress, setProgress] = useState(0);
   const [selectionError, setSelectionError] = useState("");
-  const [groupFoldersAsClasses, setGroupFoldersAsClasses] = useState(true);
+  const splitLabel = datasetSplit === "train" ? "Train" : "Test";
   const picker = useRef<HTMLInputElement>(null);
   const directories = project.data_directories;
   const mutation = useMutation({
     mutationFn: () => {
       setProgress(0);
       return mode === "upload"
-        ? uploadFolder(project.id, files, setProgress, groupFoldersAsClasses)
+        ? uploadFolder(project.id, files, setProgress, datasetSplit)
         : api<ImportResult>(`/projects/${project.id}/import`, "POST", {
             root_directory: path,
-            group_folders_as_classes: groupFoldersAsClasses,
+            dataset_split: directories.includes(path)
+              ? undefined
+              : datasetSplit,
           });
     },
     onSuccess: (r) =>
       imported(
         `이미지 ${r.images}장 · 새 항목 ${r.new_pairs}개 · 재검색 ${r.updated_pairs}개 · 파일 확인 필요 ${r.invalid_pairs}개`,
+        mode === "server" && directories.includes(path)
+          ? undefined
+          : datasetSplit,
       ),
   });
   const folderName = files[0]?.webkitRelativePath.split("/")[0];
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   return (
     <Modal
-      title="이미지 폴더 가져오기"
+      title={`${splitLabel} 폴더 업로드`}
       close={() => {
         if (!mutation.isPending) close();
       }}
@@ -139,9 +146,11 @@ export function ImportModal({
           </button>
         </div>
         <p className="modal-description">
-          이미지 폴더를 선택하면 하위 폴더까지 함께 가져옵니다. 일반 이미지는
-          각각 Query로, REF가 있는 폴더는 REF/Query Pair로 등록합니다. REF는
-          나중에 Classes에서 연결할 수 있습니다.
+          폴더 하나가 클래스 하나입니다. 선택한 폴더 이름이 클래스가 되며, 하위
+          폴더의 REF/Query 쌍과 일반 이미지도 모두 같은 클래스로 가져옵니다.
+          {datasetSplit === "train"
+            ? " Train 데이터는 학습과 Validation에 사용합니다."
+            : " Test 데이터는 평가용으로 따로 보관하며 학습과 Validation에 사용하지 않습니다."}
         </p>
         {mode === "upload" ? (
           <>
@@ -163,13 +172,16 @@ export function ImportModal({
                 setSelectionError(
                   !images.length
                     ? "선택한 폴더에 지원하는 이미지가 없습니다."
-                    : images.length > 10000
-                      ? "한 번에 이미지 10,000장까지 업로드할 수 있습니다."
-                      : images.some((file) => file.size > 256 * 1024 ** 2) ||
-                          images.reduce((sum, file) => sum + file.size, 0) >
-                            4 * 1024 ** 3
-                        ? "이미지당 256 MB, 폴더당 4 GB까지 업로드할 수 있습니다."
-                        : "",
+                    : images[0].webkitRelativePath.split("/")[0].trim().length >
+                        200
+                      ? "클래스로 사용할 폴더 이름은 200자 이하여야 합니다."
+                      : images.length > 10000
+                        ? "한 번에 이미지 10,000장까지 업로드할 수 있습니다."
+                        : images.some((file) => file.size > 256 * 1024 ** 2) ||
+                            images.reduce((sum, file) => sum + file.size, 0) >
+                              4 * 1024 ** 3
+                          ? "이미지당 256 MB, 폴더당 4 GB까지 업로드할 수 있습니다."
+                          : "",
                 );
                 mutation.reset();
                 e.target.value = "";
@@ -252,27 +264,22 @@ export function ImportModal({
               <div className="notice">
                 <RefreshCw size={16} />
                 <span>
-                  이 폴더만 재검색합니다. 변경된 Query의 GT는 초기화하고 이전
-                  좌표는 이력에 보관합니다.
+                  기존 클래스와 Train/Test 구분을 유지해 재검색합니다. 변경된
+                  Query의 GT는 초기화하고 이전 좌표는 이력에 보관합니다.
                 </span>
               </div>
             )}
           </>
         )}
-        <label className="import-class-option">
-          <input
-            type="checkbox"
-            checked={groupFoldersAsClasses}
-            disabled={mutation.isPending}
-            onChange={(e) => setGroupFoldersAsClasses(e.target.checked)}
-          />
-          Group 폴더 이름을 클래스로 자동 지정
-        </label>
-        <p className="field-hint">
-          Group, Group_001, Group (1), Group (2) 형식을 지원합니다.
-          각 Group 폴더 아래의 REF/Query 쌍과 일반 이미지는 모두 해당 폴더 이름의
-          클래스로 묶으며, 이미 지정한 클래스는 유지합니다.
-        </p>
+        {mode === "upload" && folderName && (
+          <div className="notice" role="status">
+            <FolderInput size={16} />
+            <span>
+              클래스: <strong>{folderName}</strong> · 용도:{" "}
+              <strong>{splitLabel}</strong>
+            </span>
+          </div>
+        )}
         <ErrorBox error={mutation.error} />
         <div className="modal-actions">
           <button
@@ -300,7 +307,7 @@ export function ImportModal({
             {mutation.isPending
               ? "가져오는 중…"
               : mode === "upload"
-                ? "선택한 폴더 업로드"
+                ? `${splitLabel}에 폴더 추가`
                 : "폴더 검사 · 등록"}
           </button>
         </div>

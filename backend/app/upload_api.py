@@ -3,6 +3,7 @@
 import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
 from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
@@ -29,7 +30,7 @@ def upload_path(filename: str) -> PurePosixPath:
 
 
 def register_upload_routes(app, factory, write_lock):
-    def save_uploads(project_id, files, group_folders_as_classes):
+    def save_uploads(project_id, files, dataset_split):
         with write_lock, factory() as db:
             project = db.get(Project, project_id)
             if project is None:
@@ -68,7 +69,7 @@ def register_upload_routes(app, factory, write_lock):
                                 raise HTTPException(413, "이미지당 256 MB, 폴더당 4 GB까지 업로드할 수 있습니다.")
                             output.write(chunk)
                 root = batch / next(iter(folder_names))
-                result = import_directory(db, project, root, group_folders_as_classes=group_folders_as_classes)
+                result = import_directory(db, project, root, dataset_split=dataset_split)
                 db.commit()
                 return result
             except Exception:
@@ -78,12 +79,12 @@ def register_upload_routes(app, factory, write_lock):
                 raise
 
     @app.post("/api/projects/{project_id}/upload")
-    async def upload_folder(project_id: str, request: Request, group_folders_as_classes: bool = True):
+    async def upload_folder(project_id: str, request: Request, dataset_split: Literal["train", "test"] = "train"):
         async with request.form(max_files=10000, max_fields=0) as form:
             files = form.getlist("files")
             if not files or any(not isinstance(file, UploadFile) for file in files):
                 raise HTTPException(422, "이미지 폴더를 선택하세요.")
             try:
-                return await run_in_threadpool(save_uploads, project_id, files, group_folders_as_classes)
+                return await run_in_threadpool(save_uploads, project_id, files, dataset_split)
             except OSError as exc:
                 raise HTTPException(422, "이미지를 저장할 수 없습니다. 저장 공간과 파일 경로를 확인하세요.") from exc

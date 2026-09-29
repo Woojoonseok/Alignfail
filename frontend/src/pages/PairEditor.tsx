@@ -119,6 +119,9 @@ export function PairEditor({
         <div>
           <h2>{pair.folder}</h2>
           <Status pair={pair} />
+          <span className="badge muted">
+            {pair.dataset_split === "test" ? "Test · 평가용" : "Train · 학습용"}
+          </span>
           {dirty && <span className="unsaved">저장하지 않은 변경</span>}
         </div>
         <div className="pair-navigation">

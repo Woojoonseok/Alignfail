@@ -297,3 +297,58 @@ assert heat.shape==query.shape
 """
     result = subprocess.run([python, "-c", script], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_test_uploads_excluded_from_training_validation_and_diagnostics(training_client):
+    import io
+
+    client, pid, _, _ = training_client
+    data = io.BytesIO()
+    Image.new("RGB", (20, 20), "red").save(data, format="PNG")
+    response = client.post(
+        f"/api/projects/{pid}/upload?dataset_split=test",
+        files=[
+            ("files", ("HeldOut/query.png", data.getvalue(), "image/png")),
+        ],
+    )
+    assert response.status_code == 200
+    rows = client.get(f"/api/projects/{pid}/pairs").json()
+    test_id = next(p["id"] for p in rows if p["dataset_split"] == "test")
+    version = client.post(f"/api/projects/{pid}/versions", json={"description": "with Test"})
+    assert version.status_code == 201, version.text
+    result = client.post(
+        "/api/training/prepare",
+        json={
+            "version_id": version.json()["id"],
+            "config": {"folds": 2, "device": "cpu"},
+        },
+    )
+    assert result.status_code == 201, result.text
+    exp = result.json()
+    assert len(exp["manifest"]["pairs"]) == 4
+    assert test_id not in exp["split"]["train"] + exp["split"]["validation"]
+    assert all(p["dataset_split"] == "train" for p in exp["manifest"]["pairs"])
+    assert all(v["total"] == 4 for v in exp["diagnostics"].values())
+
+
+def test_training_blocks_query_hash_shared_with_test(training_client):
+    client, pid, _, _ = training_client
+    query = client.get(f"/api/projects/{pid}/pairs").json()[0]["query"]
+    response = client.post(
+        f"/api/projects/{pid}/upload?dataset_split=test",
+        files=[
+            ("files", ("HeldOut/query.png", Path(query["file_path"]).read_bytes(), "image/png")),
+        ],
+    )
+    assert response.status_code == 200
+    version = client.post(f"/api/projects/{pid}/versions", json={"description": "duplicate test"})
+    assert version.status_code == 201, version.text
+    result = client.post(
+        "/api/training/prepare",
+        json={
+            "version_id": version.json()["id"],
+            "config": {"folds": 2, "device": "cpu"},
+        },
+    )
+    assert result.status_code == 422
+    assert "Train과 Test" in result.json()["detail"]

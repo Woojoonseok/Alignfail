@@ -25,6 +25,7 @@ export function PairExplorer({
   const [fallbackId] = useState(pairs[0]?.id);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const datasetSplit = params.get("split") ?? "all";
   const [byClass, setByClass] = useState(
     () => localStorage.getItem("alignfail.pairs.byClass") === "1",
   );
@@ -34,6 +35,7 @@ export function PairExplorer({
   const [batchBusy, setBatchBusy] = useState(false);
   const filtered = pairs.filter(
     (p) =>
+      (datasetSplit === "all" || p.dataset_split === datasetSplit) &&
       `${p.folder} ${p.group_key} ${p.class_label} ${p.tier}`
         .toLowerCase()
         .includes(search.toLowerCase()) &&
@@ -60,8 +62,8 @@ export function PairExplorer({
     : [{ key: "", items: filtered }];
   const ordered = sections.flatMap((s) => s.items);
   const selected =
-    pairs.find((p) => p.id === params.get("pair")) ??
-    pairs.find((p) => p.id === fallbackId) ??
+    filtered.find((p) => p.id === params.get("pair")) ??
+    filtered.find((p) => p.id === fallbackId) ??
     ordered[0];
   function toggleByClass(on: boolean) {
     setByClass(on);
@@ -76,7 +78,7 @@ export function PairExplorer({
     });
   }
   function select(pair: Pair) {
-    setParams({ pair: pair.id });
+    setParams({ pair: pair.id, split: datasetSplit });
   }
   useEffect(() => {
     reportDirty(dirty || batchBusy);
@@ -87,8 +89,8 @@ export function PairExplorer({
   if (!pairs.length)
     return (
       <section className="panel">
-        <Empty title="먼저 데이터 폴더를 연결하세요.">
-          <p>오른쪽 위 ‘데이터 가져오기’에서 Dada 경로를 지정하세요.</p>
+        <Empty title="Train 또는 Test 폴더를 업로드하세요.">
+          <p>오른쪽 위의 업로드 버튼에서 클래스별 폴더를 선택하세요.</p>
         </Empty>
       </section>
     );
@@ -97,7 +99,9 @@ export function PairExplorer({
       {batchOpen && (
         <BatchTools
           projectId={project.id}
-          pairs={pairs}
+          pairs={pairs.filter(
+            (p) => datasetSplit === "all" || p.dataset_split === datasetSplit,
+          )}
           refresh={refresh}
           close={() => setBatchOpen(false)}
           onBusy={setBatchBusy}
@@ -121,6 +125,7 @@ export function PairExplorer({
           <Search size={15} />
           <input
             aria-label="Pair 검색"
+            disabled={dirty || batchBusy}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Pair · 그룹 검색"
@@ -128,7 +133,19 @@ export function PairExplorer({
         </div>
         <select
           className="filter-select"
+          aria-label="Train/Test 구분"
+          value={datasetSplit}
+          disabled={dirty || batchBusy}
+          onChange={(e) => setParams({ split: e.target.value })}
+        >
+          <option value="all">전체 · {pairs.length}개</option>
+          <option value="train">Train · {project.train_count}개</option>
+          <option value="test">Test · {project.test_count}개</option>
+        </select>
+        <select
+          className="filter-select"
           aria-label="Pair 상태 필터"
+          disabled={dirty || batchBusy}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         >
@@ -177,6 +194,9 @@ export function PairExplorer({
                   >
                     <div className="pair-item-top">
                       <strong>{p.folder}</strong>
+                      <span className="badge muted">
+                        {p.dataset_split === "test" ? "Test" : "Train"}
+                      </span>
                       {p.gt_x !== null && p.enabled ? (
                         <CheckCircle2 size={14} />
                       ) : (

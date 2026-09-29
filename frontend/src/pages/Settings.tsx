@@ -77,7 +77,7 @@ export function Settings({
             className="button secondary"
             onClick={importData}
           >
-            이미지 폴더 추가 · 재검색
+            Train 폴더 추가 · 재검색
           </button>
           <p className="field-hint">
             같은 프로젝트에 이미지 폴더를 계속 추가할 수 있습니다.

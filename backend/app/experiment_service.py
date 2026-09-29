@@ -25,8 +25,18 @@ def prepare(version, config, directory):
     (directory / "data").mkdir()
     (directory / "preview").mkdir()
     wanted = config.get("modality", "all")
+    # Test uploads never participate in training, validation, or crop selection.
+    test_image_hashes = {
+        value
+        for p in version.manifest["pairs"]
+        if p["enabled"] and p.get("dataset_split", "train") == "test"
+        for field in ["query", "reference"]
+        if p.get(field) and not (field == "reference" and p.get("reference_shared"))
+        for value in [p[field].get("file_hash"), (p[field].get("cleanup") or {}).get("clean_hash")]
+        if value
+    }
     for pair in version.manifest["pairs"]:
-        if not pair["enabled"]:
+        if not pair["enabled"] or pair.get("dataset_split", "train") == "test":
             continue
         if wanted != "all" and pair.get("modality", "") != wanted:
             continue  # one model per modality: other modalities stay out of this experiment
@@ -50,6 +60,7 @@ def prepare(version, config, directory):
             "match_result": pair.get("match_result", "unknown"),
             "tier": pair["tier"],
             "class_label": pair.get("class_label", ""),
+            "dataset_split": "train",
         }
         for role, field in [("ref", "reference"), ("query", "query")]:
             record = pair[field]
@@ -71,6 +82,8 @@ def prepare(version, config, directory):
                     raise ValueError(f"{pair['folder']}: mask hash 변경")
             if sha(content) != actual_hash:
                 raise ValueError(f"{pair['folder']}: Clean hash 변경")
+            if record["file_hash"] in test_image_hashes or actual_hash in test_image_hashes:
+                raise ValueError(f"{pair['folder']}: Train과 Test에 동일 이미지 hash가 있습니다. 중복을 제외하세요.")
             dest = directory / "data" / f"{actual_hash}.bin"
             if not dest.exists():
                 dest.write_bytes(content)
@@ -113,7 +126,7 @@ def prepare(version, config, directory):
                 stats[mode][key] += int(quality[key])
         rows.append(row)
     if not rows:
-        raise ValueError(f"선택한 모달리티({wanted})의 활성 Pair가 이 버전에 없습니다.")
+        raise ValueError(f"선택한 모달리티({wanted})의 활성 Train Pair가 이 버전에 없습니다.")
     split = group_split(rows, config)
     manifest = {
         "schema": "alignfail.training.v1",

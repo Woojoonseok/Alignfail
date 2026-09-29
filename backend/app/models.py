@@ -48,6 +48,7 @@ class Pair(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     folder: Mapped[str] = mapped_column(Text)
     source_directory: Mapped[str] = mapped_column(Text, default="")
+    dataset_split: Mapped[str] = mapped_column(String(10), default="train")
     reference_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     query_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     gt_x: Mapped[float | None] = mapped_column(Float, nullable=True)

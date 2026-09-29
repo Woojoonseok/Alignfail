@@ -185,7 +185,8 @@ export default function TrainingPage({ projectId }: { projectId: string }) {
         <h2>학습 입력 준비</h2>
         <p>
           새 Triplet 기준 모델 · 같은 모델에서 crop context만 비교합니다.
-          Pattern Type은 평가 구분에만 사용합니다.
+          Pattern Type은 평가 구분에만 사용합니다. Train 업로드만
+          학습·Validation에 사용하며, Test 업로드는 별도 보관합니다.
         </p>
         <p className="training-note">
           학습 Python: {env.data?.python ?? "확인 중"} · 서버의

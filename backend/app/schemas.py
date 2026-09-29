@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -19,7 +21,7 @@ class ProjectInput(StrictModel):
 
 class ImportInput(StrictModel):
     root_directory: str = Field(min_length=1, max_length=4000)
-    group_folders_as_classes: bool = True
+    dataset_split: Literal["train", "test"] | None = None
 
 
 class PairInput(StrictModel):

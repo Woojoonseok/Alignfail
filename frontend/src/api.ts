@@ -6,6 +6,8 @@ export interface Project {
   data_directories: string[];
   created_at: string;
   pair_count: number;
+  train_count: number;
+  test_count: number;
   enabled_count: number;
   annotated_count: number;
   issue_count: number;
@@ -57,6 +59,7 @@ export interface Pair {
   gt_source: string;
   group_key: string;
   class_label: string;
+  dataset_split: "train" | "test";
   pattern_type: "A" | "B" | "unknown";
   modality: "OM" | "SEM" | "";
   match_result: "success" | "fail" | "unknown";
@@ -172,7 +175,7 @@ export function uploadFolder(
   projectId: string,
   files: File[],
   progress: (percent: number) => void,
-  groupFoldersAsClasses = true,
+  datasetSplit: "train" | "test" = "train",
 ): Promise<ImportResult> {
   const form = new FormData();
   files.forEach((file) => form.append("files", file, file.webkitRelativePath));
@@ -180,7 +183,7 @@ export function uploadFolder(
     const request = new XMLHttpRequest();
     request.open(
       "POST",
-      `/api/projects/${projectId}/upload?group_folders_as_classes=${groupFoldersAsClasses}`,
+      `/api/projects/${projectId}/upload?dataset_split=${datasetSplit}`,
     );
     request.responseType = "json";
     request.upload.onprogress = (event) => {

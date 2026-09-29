@@ -2695,16 +2695,3 @@ tbody tr:hover {
   width: 100%;
   accent-color: #315f50;
 }
-
-.modal .import-class-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 18px;
-}
-.import-class-option input {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: #308a65;
-}
