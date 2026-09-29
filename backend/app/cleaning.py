@@ -10,7 +10,9 @@ from PIL import Image
 
 from .schemas import CleanupInput
 
-ALGORITHM = "telea-cross-texture-v1"
+ALGORITHM = "telea-local-residue-v2"
+RESIDUE_MARGIN = 80
+RESIDUE_REACH = 3
 
 
 def load_pixels(content: bytes):
@@ -124,8 +126,49 @@ def create_masks(shape, config: CleanupInput):
     return mask, cross_mask
 
 
+def residue_masks(pixels, config: CleanupInput):
+    """Extend only specified line bands using contrast against pixels outside the band."""
+    gray = grayscale(pixels).astype(np.float32)
+    box_mask = np.zeros(gray.shape, dtype=np.uint8)
+    cross_mask = np.zeros_like(box_mask)
+    reach = config.padding + RESIDUE_REACH
+
+    def horizontal(values, target, lo, hi, start, end):
+        height, width = values.shape
+        lo, hi = max(0, lo - reach), min(height - 1, hi + reach)
+        start, end = max(0, start - reach), min(width - 1, end + reach)
+        neighbors = []
+        if lo > 0:
+            neighbors.append(values[lo - 1, start : end + 1])
+        if hi + 1 < height:
+            neighbors.append(values[hi + 1, start : end + 1])
+        if not neighbors:
+            return
+        background = np.mean(neighbors, axis=0)
+        residual = values[lo : hi + 1, start : end + 1] - background >= RESIDUE_MARGIN
+        target[lo : hi + 1, start : end + 1] |= residual.astype(np.uint8) * 255
+
+    if config.cross:
+        c = config.cross
+        horizontal(gray, cross_mask, c.y0, c.y1, 0, gray.shape[1] - 1)
+        horizontal(gray.T, cross_mask.T, c.x0, c.x1, 0, gray.shape[0] - 1)
+    if config.box:
+        b = config.box
+        for y in (b.y0, b.y1):
+            horizontal(gray, box_mask, y, y, b.x0, b.x1)
+        for x in (b.x0, b.x1):
+            horizontal(gray.T, box_mask.T, x, x, b.y0, b.y1)
+    return np.maximum(box_mask, cross_mask), cross_mask
+
+
 def clean_pixels(pixels, config: CleanupInput):
     mask, cross_mask = create_masks(pixels.shape, config)
+    residual, cross_residual = residue_masks(pixels, config)
+    added_pixels = int(np.count_nonzero((residual > 0) & (mask == 0)))
+    mask = np.maximum(mask, residual)
+    cross_mask = np.maximum(cross_mask, cross_residual)
+    if np.count_nonzero(mask) / mask.size > 0.25:
+        raise ValueError("잔상 포함 제거 영역이 이미지의 25%를 넘습니다. 좌표와 선 폭을 확인하세요.")
     cleaned = cv2.inpaint(pixels, mask, config.radius, cv2.INPAINT_TELEA)
     seed_material = json.dumps({"algorithm": ALGORITHM, **config.model_dump()}, sort_keys=True).encode()
     seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
@@ -151,6 +194,9 @@ def clean_pixels(pixels, config: CleanupInput):
         "noise_sigma": sigma,
         "masked_pixels": int(np.count_nonzero(mask)),
         "masked_fraction": float(np.count_nonzero(mask) / mask.size),
+        "residue_margin": RESIDUE_MARGIN,
+        "residue_reach": RESIDUE_REACH,
+        "residue_added_pixels": added_pixels,
         "opencv_version": cv2.__version__,
         "numpy_version": np.__version__,
     }

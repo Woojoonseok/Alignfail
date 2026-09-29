@@ -2,6 +2,26 @@
 
 160 고정 crop의 정보 부족 여부를 진단하고 동일 모델로 160 / 256 / 320 / Adaptive를 비교합니다. 이 릴리스는 실제 Triplet 학습, 체크포인트, dense inference, Validation 평가를 포함합니다. 회사 데이터 성능 개선은 아직 입증하지 않았습니다.
 
+## 첨부된 SharedEncoder baseline과의 차이
+
+현재 `metric_patch_v1`은 첨부된 SupCon baseline의 재현 구현이 아닙니다. 모델 코드는 `training/model.py`, crop 규칙은 `training/data.py`에 있습니다.
+
+| 항목 | 첨부 baseline | 현재 Studio |
+| --- | --- | --- |
+| Encoder | 32/64/128/192채널, GroupNorm/SiLU, GAP + projection | 16/32/256채널, ReLU, GAP |
+| 학습 | 동일 template의 여러 positive와 background를 사용하는 contrastive loss | REF/positive/negative cosine Triplet margin loss |
+| 위치 검색 | 128/144/160/176/192 창을 모두 160으로 resize 후 검색 | Query 특징 맵을 한 번 계산하고 REF 크기에 맞춰 pooling하여 검색 |
+| 위치 보정 | coarse stride 8 이후 ±12px를 1px 간격으로 재검색 | 원본 기준 4px grid; 1px refinement 없음 |
+| 입력 크기 | 네트워크 입력 160×160, augmentation context 224 | fixed 모드는 실제 crop과 입력이 각각 160/256/320, adaptive는 ROI 크기로 crop 후 output_size(기본 320)로 resize |
+
+따라서 현재 크기 비교는 Studio 모델의 crop 실험입니다. 첨부 설명의 Phase 3 Spatial correlation head, Top-K re-ranking, offset head는 구현되어 있지 않습니다. 특징 맵을 사용한다는 이유만으로 Phase 3 모델로 볼 수 없습니다.
+
+## 하얀 표시 제거 v2
+
+`telea-local-residue-v2`는 지정된 네모/십자선과 여유 폭 밖 최대 3px에서 선 바깥 이웃보다 80 이상 밝은 잔상을 추가 마스킹합니다. 첨부 코드의 `RESIDUE_MARGIN=80` 개념을 적용했으며, 채움은 기존 Telea inpainting을 유지합니다(첨부의 축 방향 선형 보간과는 다름). 제거 범위는 이미지의 25% 이내로 제한하고, 최종 마스크 밖 픽셀과 원본 파일은 보존합니다. 선 주변의 실제 밝은 미세 패턴도 후보에 포함될 수 있으므로 미리보기에서 마스크를 확인하세요.
+
+기존 저장된 Clean은 자동 덮어쓰지 않습니다. 표시 제거에서 미리보기 후 다시 저장하고, 학습에 반영하려면 새 데이터셋 버전을 생성하세요. 실제 사용자 이미지의 제거 품질이나 학습 성능 향상은 별도 확인이 필요합니다.
+
 ## 회사 WSL 설정
 
 Dataset Studio의 `.venv`에는 PyTorch를 설치하지 않아도 됩니다. 기존 회사 CUDA 환경을 별도로 사용하세요. Backend와 training Python 모두 같은 WSL 파일 경로에 접근할 수 있어야 합니다. Windows Backend에서 Linux Python 경로를 직접 실행하는 구성은 지원하지 않습니다.

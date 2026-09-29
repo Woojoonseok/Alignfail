@@ -441,6 +441,10 @@ export default function ImageCleaner({
             </section>
             <section>
               <h3>채우기 설정</h3>
+              <p className="field-hint">
+                선 주변 3px까지 밝기 대비를 검사해 흐린 잔상도 함께 제거합니다.
+                미리보기의 제거 마스크와 결과를 확인한 뒤 저장하세요.
+              </p>
               <div className="cleanup-coords">
                 <label>
                   여유 폭 (px)

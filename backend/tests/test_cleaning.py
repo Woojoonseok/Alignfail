@@ -58,6 +58,41 @@ def test_scalebar_is_not_a_cross_and_unmarked_image_returns_no_candidates():
     assert detect_markings(source)["cross"] is None
 
 
+@pytest.mark.parametrize("rgb", [False, True])
+@pytest.mark.parametrize("mark", ["box", "cross"])
+def test_dim_residue_removed_near_lines_but_real_bright_patterns_preserved(rgb, mark):
+    source = np.full((160, 192), 50, dtype=np.uint8)
+    # Real bright structure crossing the removal corridor: outside-band neighbors
+    # are equally bright, so its unmasked edges must survive.
+    source[15:60, 55:65] = 220
+    source[110:130, 160:180] = 250  # distant bright structure
+    if mark == "cross":
+        source[28:33, :50] = 223
+        source[:, 88:93] = 228
+        source[30, :] = 255
+        source[:, 90] = 255
+        options = config(cross=dict(x0=90, x1=90, y0=30, y1=30), cross_noise=False)
+    else:
+        source[28:33, 25:50] = 223
+        source[30, 20:101] = source[90, 20:101] = 255
+        source[30:91, 20] = source[30:91, 100] = 255
+        options = config(box=dict(x0=20, x1=100, y0=30, y1=90), cross_noise=False)
+    if rgb:
+        source = np.repeat(source[:, :, None], 3, axis=2)
+    original = source.copy()
+    clean, mask_png, info = clean_pixels(source, options)
+    result = np.array(Image.open(io.BytesIO(clean)))
+    mask = np.array(Image.open(io.BytesIO(mask_png)))
+    assert mask[28, 35] == 255  # outside the old default 1px padding
+    assert result[28:33, 28:45].max() < 100
+    assert mask[28, 60] == 0 and np.all(result[28, 60] == 220)
+    assert np.array_equal(result[110:130, 160:180], source[110:130, 160:180])
+    assert np.array_equal(result[mask == 0], source[mask == 0])
+    assert np.array_equal(source, original)
+    assert info["residue_added_pixels"] > 0
+    assert clean_pixels(source, options)[0] == clean
+
+
 def test_both_markings_can_be_removed_together():
     source = marked_image(box=True, cross=True)
     found = detect_markings(source)
