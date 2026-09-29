@@ -24,7 +24,7 @@ def test_box_detection_and_geometric_mask_preserve_interior():
     options = config(box=detected["box"], padding=0)
     clean, _, info = clean_pixels(source, options)
     result = np.array(Image.open(io.BytesIO(clean)))
-    mask, _ = create_masks(source.shape, options)
+    mask, _ = create_masks(source, options)
     assert np.array_equal(source[mask == 0], result[mask == 0])
     assert np.array_equal(source[31:125, 41:150], result[31:125, 41:150])
     assert result[30, 55:75].max() < 160
@@ -44,7 +44,7 @@ def test_cross_removal_is_deterministic_and_preserves_unmasked_pixels(rgb):
     mask = np.array(Image.open(io.BytesIO(mask_png)))
     assert result.shape == source.shape
     assert np.array_equal(source[mask == 0], result[mask == 0])
-    assert info["noise_sigma"] > 0
+    assert info["noise_sigma"] == 0
     assert np.median(result[mask > 0]) < 130
 
 
@@ -59,38 +59,45 @@ def test_scalebar_is_not_a_cross_and_unmarked_image_returns_no_candidates():
 
 
 @pytest.mark.parametrize("rgb", [False, True])
-@pytest.mark.parametrize("mark", ["box", "cross"])
-def test_dim_residue_removed_near_lines_but_real_bright_patterns_preserved(rgb, mark):
-    source = np.full((160, 192), 50, dtype=np.uint8)
-    # Real bright structure crossing the removal corridor: outside-band neighbors
-    # are equally bright, so its unmasked edges must survive.
-    source[15:60, 55:65] = 220
-    source[110:130, 160:180] = 250  # distant bright structure
-    if mark == "cross":
-        source[28:33, :50] = 223
-        source[:, 88:93] = 228
-        source[30, :] = 255
-        source[:, 90] = 255
-        options = config(cross=dict(x0=90, x1=90, y0=30, y1=30), cross_noise=False)
-    else:
-        source[28:33, 25:50] = 223
-        source[30, 20:101] = source[90, 20:101] = 255
-        source[30:91, 20] = source[30:91, 100] = 255
-        options = config(box=dict(x0=20, x1=100, y0=30, y1=90), cross_noise=False)
+def test_dim_residue_removed_inside_band_but_real_patterns_preserved(rgb):
+    source = np.full((160, 192), 60, dtype=np.uint8)
+    source[30, :] = source[:, 90] = 255
+    source[30, 25:50] = 223  # compressed line missed by absolute threshold
+    source[15:60, 55:65] = 220  # genuine structure crossing the band
+    source[30, 70:75] = 50  # dark structure must not be masked
+    source[28, 25:50] = 223  # outside band: must remain untouched
     if rgb:
         source = np.repeat(source[:, :, None], 3, axis=2)
     original = source.copy()
+    options = config(cross=dict(x0=90, x1=90, y0=30, y1=30))
     clean, mask_png, info = clean_pixels(source, options)
     result = np.array(Image.open(io.BytesIO(clean)))
     mask = np.array(Image.open(io.BytesIO(mask_png)))
-    assert mask[28, 35] == 255  # outside the old default 1px padding
-    assert result[28:33, 28:45].max() < 100
-    assert mask[28, 60] == 0 and np.all(result[28, 60] == 220)
-    assert np.array_equal(result[110:130, 160:180], source[110:130, 160:180])
+    assert mask[30, 35] == 255 and np.all(result[30, 35] == 60)
+    assert mask[30, 60] == 0 and np.all(result[30, 60] == 220)
+    assert mask[30, 72] == 0 and np.all(result[30, 72] == 50)
+    assert mask[28, 35] == 0 and np.all(result[28, 35] == 223)
+    assert np.all(result[30, 90] == 60)  # intersection uses repaired horizontal neighbors
     assert np.array_equal(result[mask == 0], source[mask == 0])
     assert np.array_equal(source, original)
-    assert info["residue_added_pixels"] > 0
+    assert info["residue_added_pixels"] == 25
     assert clean_pixels(source, options)[0] == clean
+    # Legacy clients may still submit padding/noise; neither affects cross pixels.
+    assert clean_pixels(source, options.model_copy(update={"padding": 5, "cross_noise": True}))[0] == clean
+
+
+def test_cross_defaults_and_horizontal_mask_survives_vertical_or():
+    source = np.full((80, 80), 60, np.uint8)
+    source[39, :] = 223
+    source[:, 40] = 223
+    options = config(cross=dict(x0=40, x1=40, y0=39, y1=39))
+    assert options.padding == 0 and options.cross_noise is False
+    mask, cross = create_masks(source, options)
+    assert mask[39, 40] == 0  # neighbors on both axes are also 223
+    assert cross[39, 10] == 255 and cross[10, 40] == 255
+    source[38, 40] = source[40, 40] = 60
+    mask, _ = create_masks(source, options)
+    assert mask[39, 40] == 255  # horizontal gate true, vertical false: OR retains it
 
 
 def test_both_markings_can_be_removed_together():

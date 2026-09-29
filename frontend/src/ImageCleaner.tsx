@@ -55,16 +55,16 @@ export default function ImageCleaner({
           source_hash: image.file_hash!,
           box: null,
           cross: null,
-          padding: 1,
+          padding: 0,
           radius: 3,
-          cross_noise: true,
+          cross_noise: false,
         },
   );
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mode, setMode] = useState<"box" | "cross" | null>(null);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const [message, setMessage] = useState(
-    "자동 찾기 또는 직접 지정을 선택하세요. 네모는 테두리만, 십자선은 가로·세로 띠를 제거합니다.",
+    "자동 찾기 또는 직접 지정을 선택하세요. 네모는 테두리만, 십자선은 가로·세로 띠 안의 밝은 표시만 제거합니다.",
   );
   const [zoom, setZoom] = useState(1);
   const [showMask, setShowMask] = useState(true);
@@ -300,26 +300,16 @@ export default function ImageCleaner({
                     {showMask && config.cross && (
                       <g fill="#ff6b72" opacity={0.65}>
                         <rect
-                          x={Math.max(0, config.cross.x0 - config.padding)}
+                          x={Math.max(0, config.cross.x0)}
                           y={0}
-                          width={
-                            config.cross.x1 -
-                            config.cross.x0 +
-                            1 +
-                            2 * config.padding
-                          }
+                          width={config.cross.x1 - config.cross.x0 + 1}
                           height={height}
                         />
                         <rect
                           x={0}
-                          y={Math.max(0, config.cross.y0 - config.padding)}
+                          y={Math.max(0, config.cross.y0)}
                           width={width}
-                          height={
-                            config.cross.y1 -
-                            config.cross.y0 +
-                            1 +
-                            2 * config.padding
-                          }
+                          height={config.cross.y1 - config.cross.y0 + 1}
                         />
                       </g>
                     )}
@@ -442,12 +432,13 @@ export default function ImageCleaner({
             <section>
               <h3>채우기 설정</h3>
               <p className="field-hint">
-                선 주변 3px까지 밝기 대비를 검사해 흐린 잔상도 함께 제거합니다.
-                미리보기의 제거 마스크와 결과를 확인한 뒤 저장하세요.
+                십자선 밴드 안의 밝기와 바로 옆 픽셀 대비로 제거 영역을 정하고
+                선형 보간합니다. 미리보기의 제거 마스크와 결과를 확인한 뒤
+                저장하세요.
               </p>
               <div className="cleanup-coords">
                 <label>
-                  여유 폭 (px)
+                  네모 여유 폭 (px)
                   <input
                     aria-label="제거 여유 폭"
                     type="number"
@@ -460,7 +451,7 @@ export default function ImageCleaner({
                   />
                 </label>
                 <label>
-                  복원 반경 (px)
+                  네모 복원 반경 (px)
                   <input
                     aria-label="복원 반경"
                     type="number"
@@ -471,14 +462,9 @@ export default function ImageCleaner({
                   />
                 </label>
               </div>
-              <label className="cleanup-noise">
-                <input
-                  type="checkbox"
-                  checked={config.cross_noise}
-                  onChange={(e) => update({ cross_noise: e.target.checked })}
-                />{" "}
-                십자선 채움에 주변 질감 노이즈 추가
-              </label>
+              <p className="field-hint">
+                십자선에는 여유 폭·인페인트·합성 노이즈를 적용하지 않습니다.
+              </p>
             </section>
           </div>
         </fieldset>

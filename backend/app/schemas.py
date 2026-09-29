@@ -75,9 +75,9 @@ class CleanupSource(StrictModel):
 class CleanupInput(CleanupSource):
     box: PixelRect | None = None
     cross: PixelRect | None = None
-    padding: int = Field(default=1, ge=0, le=5)
+    padding: int = Field(default=0, ge=0, le=5)
     radius: float = Field(default=3, ge=1, le=10)
-    cross_noise: bool = True
+    cross_noise: bool = False
 
 
 class AutoCleanupInput(CleanupSource):

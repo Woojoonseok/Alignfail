@@ -10,9 +10,9 @@ from PIL import Image
 
 from .schemas import CleanupInput
 
-ALGORITHM = "telea-local-residue-v2"
+ALGORITHM = "linear-local-contrast-v3"
 RESIDUE_MARGIN = 80
-RESIDUE_REACH = 3
+REMOVE_WHITE_THRESHOLD = 235
 
 
 def load_pixels(content: bytes):
@@ -94,8 +94,8 @@ def detect_markings(pixels):
     }
 
 
-def create_masks(shape, config: CleanupInput):
-    height, width = shape[:2]
+def create_masks(pixels, config: CleanupInput):
+    height, width = pixels.shape[:2]
     mask = np.zeros((height, width), dtype=np.uint8)
     cross_mask = np.zeros_like(mask)
     if config.box is None and config.cross is None:
@@ -114,88 +114,78 @@ def create_masks(shape, config: CleanupInput):
         mask[b.y0 : b.y1 + 1, b.x1] = 255
     if config.cross:
         c = config.cross
-        cross_mask[c.y0 : c.y1 + 1, :] = 255
-        cross_mask[:, c.x0 : c.x1 + 1] = 255
+        band_height, band_width = c.y1 - c.y0 + 1, c.x1 - c.x0 + 1
+        if (band_height * width + band_width * height - band_height * band_width) / (height * width) > 0.25:
+            raise ValueError("십자선 지정 영역이 이미지의 25%를 넘습니다. 좌표와 선 폭을 확인하세요.")
+        gray = grayscale(pixels).astype(np.float32)
+        ref_h = (gray[max(0, c.y0 - 1)] + gray[min(height - 1, c.y1 + 1)]) * 0.5
+        ref_v = (gray[:, max(0, c.x0 - 1)] + gray[:, min(width - 1, c.x1 + 1)]) * 0.5
+        horizontal = gray[c.y0 : c.y1 + 1, :]
+        vertical = gray[:, c.x0 : c.x1 + 1]
+        cross_mask[c.y0 : c.y1 + 1, :] = (
+            (horizontal >= REMOVE_WHITE_THRESHOLD) | (horizontal - ref_h[None, :] >= RESIDUE_MARGIN)
+        ).astype(np.uint8) * 255
+        cross_mask[:, c.x0 : c.x1 + 1] |= (
+            (vertical >= REMOVE_WHITE_THRESHOLD) | (vertical - ref_v[:, None] >= RESIDUE_MARGIN)
+        ).astype(np.uint8) * 255
     if config.padding:
         kernel = np.ones((2 * config.padding + 1, 2 * config.padding + 1), dtype=np.uint8)
         mask = cv2.dilate(mask, kernel)
-        cross_mask = cv2.dilate(cross_mask, kernel)
     mask = np.maximum(mask, cross_mask)
     if np.count_nonzero(mask) / mask.size > 0.25:
         raise ValueError("제거 영역이 이미지의 25%를 넘습니다. 좌표와 선 폭을 확인하세요.")
     return mask, cross_mask
 
 
-def residue_masks(pixels, config: CleanupInput):
-    """Extend only specified line bands using contrast against pixels outside the band."""
-    gray = grayscale(pixels).astype(np.float32)
-    box_mask = np.zeros(gray.shape, dtype=np.uint8)
-    cross_mask = np.zeros_like(box_mask)
-    reach = config.padding + RESIDUE_REACH
-
-    def horizontal(values, target, lo, hi, start, end):
-        height, width = values.shape
-        lo, hi = max(0, lo - reach), min(height - 1, hi + reach)
-        start, end = max(0, start - reach), min(width - 1, end + reach)
-        neighbors = []
-        if lo > 0:
-            neighbors.append(values[lo - 1, start : end + 1])
-        if hi + 1 < height:
-            neighbors.append(values[hi + 1, start : end + 1])
-        if not neighbors:
-            return
-        background = np.mean(neighbors, axis=0)
-        residual = values[lo : hi + 1, start : end + 1] - background >= RESIDUE_MARGIN
-        target[lo : hi + 1, start : end + 1] |= residual.astype(np.uint8) * 255
-
-    if config.cross:
-        c = config.cross
-        horizontal(gray, cross_mask, c.y0, c.y1, 0, gray.shape[1] - 1)
-        horizontal(gray.T, cross_mask.T, c.x0, c.x1, 0, gray.shape[0] - 1)
-    if config.box:
-        b = config.box
-        for y in (b.y0, b.y1):
-            horizontal(gray, box_mask, y, y, b.x0, b.x1)
-        for x in (b.x0, b.x1):
-            horizontal(gray.T, box_mask.T, x, x, b.y0, b.y1)
-    return np.maximum(box_mask, cross_mask), cross_mask
+def interpolate_cross(pixels, cross, mask):
+    """Reference two-pass interpolation; vertical neighbors include horizontal repair."""
+    source = pixels.astype(np.float32)
+    out = source.copy()
+    height, width = pixels.shape[:2]
+    top, bottom = max(0, cross.y0 - 1), min(height - 1, cross.y1 + 1)
+    if bottom > top:
+        for y in range(cross.y0, cross.y1 + 1):
+            alpha = (y - top) / float(bottom - top)
+            interpolated = (1 - alpha) * source[top] + alpha * source[bottom]
+            selected = mask[y] > 0
+            out[y, selected] = interpolated[selected]
+    horizontal = out.copy()
+    left, right = max(0, cross.x0 - 1), min(width - 1, cross.x1 + 1)
+    if right > left:
+        for x in range(cross.x0, cross.x1 + 1):
+            alpha = (x - left) / float(right - left)
+            interpolated = (1 - alpha) * horizontal[:, left] + alpha * horizontal[:, right]
+            selected = mask[:, x] > 0
+            out[selected, x] = interpolated[selected]
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def clean_pixels(pixels, config: CleanupInput):
-    mask, cross_mask = create_masks(pixels.shape, config)
-    residual, cross_residual = residue_masks(pixels, config)
-    added_pixels = int(np.count_nonzero((residual > 0) & (mask == 0)))
-    mask = np.maximum(mask, residual)
-    cross_mask = np.maximum(cross_mask, cross_residual)
-    if np.count_nonzero(mask) / mask.size > 0.25:
-        raise ValueError("잔상 포함 제거 영역이 이미지의 25%를 넘습니다. 좌표와 선 폭을 확인하세요.")
-    cleaned = cv2.inpaint(pixels, mask, config.radius, cv2.INPAINT_TELEA)
+    mask, cross_mask = create_masks(pixels, config)
+    cleaned = pixels.copy()
+    # Box geometry/padding and Telea remain independent of the cross path.
+    if config.box:
+        box_mask, _ = create_masks(pixels, config.model_copy(update={"cross": None}))
+        cleaned = cv2.inpaint(pixels, box_mask, config.radius, cv2.INPAINT_TELEA)
+    if config.cross:
+        cross_cleaned = interpolate_cross(pixels, config.cross, cross_mask)
+        cleaned[cross_mask > 0] = cross_cleaned[cross_mask > 0]
+    added_pixels = int(np.count_nonzero((cross_mask > 0) & (grayscale(pixels) < REMOVE_WHITE_THRESHOLD)))
     seed_material = json.dumps({"algorithm": ALGORITHM, **config.model_dump()}, sort_keys=True).encode()
     seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
-    sigma = 0.0
-    if config.cross and config.cross_noise:
-        gray = grayscale(pixels).astype(np.float32)
-        highpass = gray - cv2.GaussianBlur(gray, (0, 0), 1.2)
-        # Keep annotation edges out of the texture estimate as well as the masked pixels.
-        excluded = cv2.dilate(mask, np.ones((9, 9), np.uint8))
-        sample = highpass[excluded == 0]
-        sigma = float(np.std(sample)) if sample.size else 0.0
-        noise = np.random.default_rng(seed).normal(0, sigma, mask.shape)
-        selected = cross_mask > 0
-        values = cleaned[selected].astype(float)
-        values += noise[selected, None] if pixels.ndim == 3 else noise[selected]
-        cleaned[selected] = np.clip(np.rint(values), 0, 255).astype(np.uint8)
     # Unmasked original pixels are always preserved, including the box interior.
     cleaned[mask == 0] = pixels[mask == 0]
     info = {
         "algorithm": ALGORITHM,
         "parameters": config.model_dump(),
         "seed": seed,
-        "noise_sigma": sigma,
+        "noise_sigma": 0.0,
         "masked_pixels": int(np.count_nonzero(mask)),
         "masked_fraction": float(np.count_nonzero(mask) / mask.size),
         "residue_margin": RESIDUE_MARGIN,
-        "residue_reach": RESIDUE_REACH,
+        "cross_padding_applied": 0,
+        "cross_noise_applied": False,
+        "remove_white_threshold": REMOVE_WHITE_THRESHOLD,
         "residue_added_pixels": added_pixels,
         "opencv_version": cv2.__version__,
         "numpy_version": np.__version__,
