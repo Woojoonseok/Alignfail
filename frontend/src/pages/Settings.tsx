@@ -9,13 +9,13 @@ export function Settings({
   project,
   refresh,
   notify,
-  deleted,
+  deleteProject,
   importData,
 }: {
   project: Project;
   refresh: () => Promise<void>;
   notify: Notify;
-  deleted: () => void;
+  deleteProject: () => void;
   importData: () => void;
 }) {
   const [name, setName] = useState(project.name);
@@ -26,14 +26,6 @@ export function Settings({
     onSuccess: async () => {
       await refresh();
       notify("프로젝트 정보를 저장했습니다.");
-    },
-  });
-  const remove = useMutation({
-    mutationFn: () => api(`/projects/${project.id}`, "DELETE"),
-    onSuccess: async () => {
-      await refresh();
-      deleted();
-      notify("프로젝트 등록 정보를 삭제했습니다. 원본 이미지는 유지됩니다.");
     },
   });
   return (
@@ -96,19 +88,7 @@ export function Settings({
           <br />
           필요한 GT와 Manifest를 먼저 내보내세요.
         </p>
-        <ErrorBox error={remove.error} />
-        <button
-          className="button danger"
-          disabled={remove.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                `‘${project.name}’의 모든 등록 정보, GT 이력과 버전을 삭제할까요? 이 작업은 되돌릴 수 없습니다. 원본 이미지 파일은 유지됩니다.`,
-              )
-            )
-              remove.mutate();
-          }}
-        >
+        <button className="button danger" onClick={deleteProject}>
           <Trash2 size={16} /> 프로젝트 삭제
         </button>
       </section>

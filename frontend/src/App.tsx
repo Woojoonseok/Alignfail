@@ -28,6 +28,7 @@ import {
   Settings2,
   ShieldCheck,
   Tags,
+  Trash2,
   X,
 } from "lucide-react";
 import { api, type Pair, type Project } from "./api";
@@ -40,6 +41,7 @@ import { ClassesPage } from "./pages/ClassesPage";
 import { ModelPage } from "./pages/ModelPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { Workflow } from "./pages/Workflow";
+import { DeleteProjectModal } from "./components/DeleteProjectModal";
 import { Settings } from "./pages/Settings";
 import TrainingPage from "./TrainingPage";
 
@@ -102,6 +104,7 @@ export default function App() {
     queryFn: () => api<Pair[]>(`/projects/${project!.id}/pairs`),
     enabled: !!project,
   });
+  const [deleteModal, setDeleteModal] = useState(false);
   const [projectModal, setProjectModal] = useState(false);
   const [importModal, setImportModal] = useState<"train" | "test" | null>(null);
   const [toast, setToast] = useState("");
@@ -277,6 +280,13 @@ export default function App() {
                 >
                   <FolderInput size={17} /> Test 폴더 업로드
                 </button>
+                <button
+                  className="button danger"
+                  disabled={unsaved}
+                  onClick={() => setDeleteModal(true)}
+                >
+                  <Trash2 size={16} /> 프로젝트 삭제
+                </button>
               </div>
             )}
           </div>
@@ -388,7 +398,7 @@ export default function App() {
                     refresh={refresh}
                     notify={setToast}
                     importData={() => setImportModal("train")}
-                    deleted={() => chooseProject("")}
+                    deleteProject={() => setDeleteModal(true)}
                   />
                 }
               />
@@ -411,6 +421,22 @@ export default function App() {
           </footer>
         </main>
       </div>
+      {deleteModal && project && (
+        <DeleteProjectModal
+          key={project.id}
+          project={project}
+          close={() => setDeleteModal(false)}
+          deleted={() => {
+            const remaining = projects.filter((p) => p.id !== project.id);
+            client.setQueryData(["projects"], remaining);
+            chooseProject(remaining[0]?.id ?? "");
+            setDeleteModal(false);
+            navigate("/");
+            setToast("프로젝트를 삭제했습니다. 원본 이미지 파일은 유지됩니다.");
+            void client.invalidateQueries({ queryKey: ["projects"] });
+          }}
+        />
+      )}
       {projectModal && (
         <ProjectModal
           close={() => setProjectModal(false)}

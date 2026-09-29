@@ -205,6 +205,20 @@ def test_project_delete_keeps_original_images(client, tmp_path):
     assert client.get(f"/api/pairs/{pair['id']}/history").status_code == 404
     assert client.get(f"/api/versions/{version['id']}/manifest").status_code == 404
     assert client.get("/api/projects").json() == []
+    assert client.delete(f"/api/projects/{pid}").status_code == 404
+
+
+def test_project_delete_only_removes_selected_project(client, tmp_path):
+    root = tmp_path / "shared-images"
+    folder = make_pair(root)
+    original = (folder / "query.bmp").read_bytes()
+    first, second = project(client, root), project(client, root)
+    survivor = save(client, pairs(client, second)[0], gt_x=15, gt_y=20).json()
+    assert client.delete(f"/api/projects/{first}").status_code == 204
+    assert [p["id"] for p in client.get("/api/projects").json()] == [second]
+    remaining = pairs(client, second)[0]
+    assert (remaining["id"], remaining["gt_x"], remaining["gt_y"]) == (survivor["id"], 15, 20)
+    assert (folder / "query.bmp").read_bytes() == original
 
 
 def test_invalid_paths_and_external_origin(client, tmp_path):
