@@ -28,6 +28,16 @@ export function Settings({
       notify("프로젝트 정보를 저장했습니다.");
     },
   });
+  const normalize = useMutation({
+    mutationFn: () =>
+      api(`/projects/${project.id}/normalize-upload-roles`, "POST"),
+    onSuccess: async () => {
+      await refresh();
+      notify(
+        "기존 업로드를 Train=REF, Test=Query로 정리하고 저장된 십자선 중심 GT를 복구했습니다.",
+      );
+    },
+  });
   return (
     <>
       <section className="panel settings-panel">
@@ -74,6 +84,15 @@ export function Settings({
           <p className="field-hint">
             같은 프로젝트에 이미지 폴더를 계속 추가할 수 있습니다.
           </p>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={normalize.isPending}
+            onClick={() => normalize.mutate()}
+          >
+            기존 업로드를 Train=REF · Test=Query로 정리
+          </button>
+          <ErrorBox error={normalize.error} />
           <ErrorBox error={update.error} />
           <button className="button primary" disabled={update.isPending}>
             <Save size={16} /> 정보 저장

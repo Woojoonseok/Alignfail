@@ -483,7 +483,13 @@ export function ClassesPage({ project, pairs, refresh, notify }: PageProps) {
                 style={{ "--thumb": `${SIZES[size]}px` } as CSSProperties}
               >
                 {members.map((p) => {
-                  const url = imageSrc(p[role]);
+                  const url = imageSrc(
+                    p.sample_role === "reference"
+                      ? p.reference
+                      : p.sample_role === "query"
+                        ? p.query
+                        : p[role],
+                  );
                   const on = selected.has(p.id);
                   const ownRef = !!p.reference && !p.reference_shared;
                   const match = matches[p.id];

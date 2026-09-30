@@ -60,6 +60,7 @@ export interface Pair {
   group_key: string;
   class_label: string;
   dataset_split: "train" | "test";
+  sample_role: "pair" | "reference" | "query";
   pattern_type: "A" | "B" | "unknown";
   modality: "OM" | "SEM" | "";
   match_result: "success" | "fail" | "unknown";

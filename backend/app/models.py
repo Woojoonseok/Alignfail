@@ -49,6 +49,7 @@ class Pair(Base):
     folder: Mapped[str] = mapped_column(Text)
     source_directory: Mapped[str] = mapped_column(Text, default="")
     dataset_split: Mapped[str] = mapped_column(String(10), default="train")
+    sample_role: Mapped[str] = mapped_column(String(10), default="pair")
     reference_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     query_image_id: Mapped[str | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     gt_x: Mapped[float | None] = mapped_column(Float, nullable=True)

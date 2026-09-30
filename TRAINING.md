@@ -157,3 +157,11 @@ ALIGNFAIL_TEST_TRAINING_PYTHON="$PWD/.training-venv/bin/python" .venv/bin/python
 ### Train / Test 업로드 구분
 
 상단의 Train/Test 업로드 버튼으로 클래스 폴더들이 들어 있는 상위 폴더를 등록합니다. 바로 아래 폴더 이름이 각각 클래스가 되며, 더 깊은 하위 이미지도 해당 클래스에 포함합니다. Test는 별도 저장하며, 학습 입력 준비와 Group Fold의 Train/Validation 분리는 Train 업로드에만 적용됩니다. Test는 모델 선택·crop 진단에 사용하지 않습니다. 기존 데이터와 구버전 manifest는 Train으로 취급합니다. 현재 결과표는 Validation 결과이며, 별도 Test 추론·평가 화면은 후속 범위입니다.
+
+### REF-only Train 데이터
+
+새 업로드는 Train=REF, Test=Query입니다. Train은 REF/Query 쌍이나 `_REF` 파일명 규칙을 요구하지 않습니다. REF 십자선 제거와 기준 GT 저장을 연결했으며, 기존 좌표는 덮어쓰지 않습니다. 자동 GT 확인 및 촬영 group_key 지정 후 버전을 만드세요.
+
+기존 Triplet baseline도 REF-only 데이터를 받을 수 있습니다. 같은 클래스의 Train-fold REF 중심 crop을 독립적으로 밝기 증강하여 positive로 사용하고 해당 이미지의 먼 배경을 negative로 사용합니다. 내부 학습 manifest의 query_path/query_gt는 이 경우 동일 REF 이미지와 기준점을 가리키는 호환 필드이며, Test 데이터를 가져오지 않습니다. Validation은 각 클래스의 Train-fold REF를 템플릿으로 사용하여 hold-out REF의 기준점 위치 오차를 측정합니다. 이는 **정답 클래스를 아는 위치 평가**이며 클래스 검색 정확도가 아닙니다. Validation에만 존재하는 클래스는 학습 준비에서 차단합니다.
+
+fixed crop은 REF GT만 있어도 준비할 수 있습니다. ROI가 없으면 선택한 fixed 크기의 footprint로 crop 진단을 생성하며 이는 실제 측정 ROI가 아닙니다. Adaptive 학습에는 별도의 유효한 REF ROI가 필요합니다. 모델 구조와 Triplet loss는 유지하며, 첨부 SupCon baseline 재현이나 독립 Test 추론 기능을 이번 역할 수정에 포함하지 않습니다.

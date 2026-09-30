@@ -4,12 +4,13 @@ from pathlib import Path
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 from PIL import Image
-from sqlalchemy import or_, update
+from sqlalchemy import or_, select, update
 
 from .cleaning import clean_pixels, detect_markings, load_pixels
 from .database import session_dependency
-from .models import ImageCleanup, ImageRecord, Pair, Project, now, uid
+from .models import GTHistory, ImageCleanup, ImageRecord, Pair, Project, now, uid
 from .schemas import AutoCleanupInput, CleanupInput, CleanupSource
+from .services import gt_value
 from .storage import HashMismatch, active_cleanup, digest, inside_project, read_verified, sha
 
 
@@ -52,6 +53,29 @@ def register_cleanup_routes(app, factory, write_lock):
             .values(revision=Pair.revision + 1, updated_at=now())
         )
 
+    def assign_cross_gt(db, image_id, cross):
+        if cross is None:
+            return 0
+        pairs = list(
+            db.scalars(
+                select(Pair).where(
+                    Pair.reference_image_id == image_id,
+                    Pair.sample_role == "reference",
+                    Pair.dataset_split == "train",
+                    Pair.gt_x.is_(None),
+                    Pair.gt_y.is_(None),
+                    Pair.gt_source != "manual",
+                )
+            )
+        )
+        for pair in pairs:
+            before = gt_value(pair)
+            pair.gt_x = (cross.x0 + cross.x1) / 2
+            pair.gt_y = (cross.y0 + cross.y1) / 2
+            pair.gt_source = "auto_cross"
+            db.add(GTHistory(pair_id=pair.id, before=before, after=gt_value(pair), reason="십자선 제거 시 자동 GT"))
+        return len(pairs)
+
     @app.get("/api/images/{image_id}/clean/detect")
     def detect(image_id: str, db=Depends(session)):
         record, pixels = read_image(db, image_id)
@@ -92,9 +116,10 @@ def register_cleanup_routes(app, factory, write_lock):
                 mask_hash=sha(mask),
             )
             db.add(result)
+            assigned = assign_cross_gt(db, image_id, config.cross)
             update_pairs(db, image_id)
             db.commit()
-            return {"id": result.id, "clean_hash": result.clean_hash, "info": info}
+            return {"id": result.id, "clean_hash": result.clean_hash, "info": info, "auto_gt_count": assigned}
 
     @app.post("/api/images/{image_id}/clean/auto")
     def auto_clean(image_id: str, config: AutoCleanupInput, db=Depends(session)):
@@ -104,6 +129,17 @@ def register_cleanup_routes(app, factory, write_lock):
             record, pixels = read_image(db, image_id, config.source_hash)
             existing = active_cleanup(db, image_id)
             if existing and not config.replace_existing:
+                if config.cross and existing.source_hash == record.file_hash:
+                    previous = CleanupInput(**existing.config["parameters"])
+                    assigned = assign_cross_gt(db, image_id, previous.cross)
+                    if assigned:
+                        update_pairs(db, image_id)
+                        db.commit()
+                        return {
+                            "status": "saved",
+                            "reason": "기존 Clean 유지 · 십자선 중심 자동 GT 저장",
+                            "auto_gt_count": assigned,
+                        }
                 return {"status": "skipped", "reason": "기존 Clean 유지"}
             detected = detect_markings(pixels)
             options = CleanupInput(
@@ -114,7 +150,12 @@ def register_cleanup_routes(app, factory, write_lock):
             if options.box is None and options.cross is None:
                 return {"status": "skipped", "reason": "자동 검출 후보 없음 (필요 시 직접 지정)"}
             result = save(image_id, options, db)
-            return {"status": "saved", "reason": "Clean 저장", "cleanup_id": result["id"]}
+            return {
+                "status": "saved",
+                "reason": "Clean 저장 · 자동 GT 저장" if result["auto_gt_count"] else "Clean 저장",
+                "cleanup_id": result["id"],
+                "auto_gt_count": result["auto_gt_count"],
+            }
 
     @app.post("/api/images/{image_id}/clean/reset")
     def reset(image_id: str, config: CleanupSource, db=Depends(session)):

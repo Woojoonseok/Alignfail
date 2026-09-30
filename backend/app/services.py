@@ -99,6 +99,8 @@ def import_directory(db, project, root: Path, *, dataset_split: str | None = Non
         roots.append(str(root))
     index = roots.index(str(root))
     prefix = "" if index == 0 else f"{root.name} [{index + 1}]/"
+    if dataset_split is not None or any(p.sample_role != "pair" for p in source_pairs):
+        return import_samples(db, project, root, selected_split, roots, prefix, source_pairs)
     images = {i.file_path: i for i in db.scalars(select(ImageRecord).where(ImageRecord.project_id == project.id))}
     pairs = {p.folder: p for p in db.scalars(select(Pair).where(Pair.project_id == project.id))}
     # Preserve existing folder-pair IDs even when their REF has since disappeared.
@@ -198,6 +200,102 @@ def import_directory(db, project, root: Path, *, dataset_split: str | None = Non
     return counts
 
 
+def import_samples(db, project, root, split, roots, prefix, existing):
+    """One uploaded file = one REF training sample or one Query test sample."""
+    role = "reference" if split == "train" else "query"
+    images = {r.file_path: r for r in db.scalars(select(ImageRecord).where(ImageRecord.project_id == project.id))}
+    # Query GT belongs to the original query even when converting an old paired import.
+    owners = {p.query_image_id or p.reference_image_id: p for p in existing}
+    ref_annotations = {
+        p.reference_image_id: list(db.scalars(select(ReferenceAnnotation).where(ReferenceAnnotation.pair_id == p.id)))
+        for p in existing
+        if p.reference_image_id
+    }
+    seen = set()
+    counts = dict(new_pairs=0, updated_pairs=0, images=0, invalid_pairs=0)
+    for _entry, files, _ in directory_items(root, set()):
+        for path in files:
+            relative = path.relative_to(root)
+            label = (relative.parts[0] if len(relative.parts) > 1 else root.name).strip()
+            if not label or len(label) > 200:
+                raise HTTPException(422, "클래스로 사용할 폴더 이름은 1~200자여야 합니다.")
+            key = str(path.resolve())
+            record = images.get(key)
+            if record is None:
+                record = ImageRecord(
+                    project_id=project.id,
+                    file_path=key,
+                    file_name=path.name,
+                    folder=prefix + relative.as_posix(),
+                    role="REF" if split == "train" else "QUERY",
+                )
+                db.add(record)
+                db.flush()
+                images[key] = record
+            pair = owners.get(record.id)
+            if pair is None:
+                pair = Pair(project_id=project.id, folder=prefix + relative.as_posix(), source_directory=str(root))
+                db.add(pair)
+                db.flush()
+                counts["new_pairs"] += 1
+            else:
+                counts["updated_pairs"] += 1
+            previous_hash = record.file_hash
+            for attr, value in inspect_image(path).items():
+                setattr(record, attr, value)
+            if previous_hash and previous_hash != record.file_hash:
+                clear_gt(db, pair, "학습/평가 이미지 변경으로 GT 재검토 필요")
+            pair.folder = record.folder = prefix + relative.as_posix()
+            pair.sample_role = role
+            pair.dataset_split = split
+            pair.reference_image_id = record.id if split == "train" else None
+            pair.query_image_id = record.id if split == "test" else None
+            record.role = "REF" if split == "train" else "QUERY"
+            pair.class_label = pair.class_label or label
+            pair.modality = pair.modality or modality_of(relative.as_posix())
+            pair.match_result = match_result_of(path.name)
+            pair.import_issues = [record.error] if record.error else []
+            cleanup = active_cleanup(db, record.id)
+            if (
+                split == "train"
+                and cleanup
+                and cleanup.source_hash == record.file_hash
+                and pair.gt_x is None
+                and pair.gt_y is None
+                and pair.gt_source != "manual"
+            ):
+                cross = cleanup.config.get("parameters", {}).get("cross")
+                if cross:
+                    before = gt_value(pair)
+                    pair.gt_x = (cross["x0"] + cross["x1"]) / 2
+                    pair.gt_y = (cross["y0"] + cross["y1"]) / 2
+                    pair.gt_source = "auto_cross"
+                    db.add(
+                        GTHistory(
+                            pair_id=pair.id,
+                            before=before,
+                            after=gt_value(pair),
+                            reason="Train REF 역할 복구 · 십자선 중심 GT",
+                        )
+                    )
+            pair.revision += 1
+            pair.updated_at = now()
+            # Keep old REF ROI/history on the sample that actually owns those pixels.
+            if split == "train":
+                for annotation in ref_annotations.get(record.id, []):
+                    annotation.pair_id = pair.id
+            seen.add(pair.id)
+            counts["images"] += 1
+            counts["invalid_pairs"] += bool(pair.import_issues)
+    for pair in existing:
+        if pair.id not in seen:
+            pair.import_issues = ["등록한 이미지가 원본 폴더에 없습니다."]
+    project.root_directory = project.root_directory or str(root)
+    project.data_directories = roots
+    db.flush()
+    return counts
+
+
 def image_dict(db, image):
     if image is None:
         return None
@@ -242,6 +340,7 @@ def pair_dict(db, pair):
             "group_key",
             "class_label",
             "dataset_split",
+            "sample_role",
             "modality",
             "match_result",
             "tier",
@@ -302,14 +401,14 @@ def audit_dataset(db, project_id, dataset_split=None):
             add(pair, "INVALID_PAIR", issue)
         for role, image_id in [("REF", pair.reference_image_id), ("QUERY", pair.query_image_id)]:
             if not image_id:
-                if role == "REF":
+                if role == "REF" and pair.sample_role != "query":
                     add(
                         pair,
                         "REF_UNLINKED",
                         "REF가 없습니다. Classes에서 템플릿 클래스에 붙이면 대표 REF가 연결됩니다.",
                         "warning",
                     )
-                elif not pair.import_issues:
+                elif role == "QUERY" and pair.sample_role != "reference" and not pair.import_issues:
                     add(pair, "MISSING_IMAGE", f"{role} 이미지가 없습니다.")
                 continue
             image = db.get(ImageRecord, image_id)
@@ -343,9 +442,15 @@ def audit_dataset(db, project_id, dataset_split=None):
                 hashes[current["file_hash"]].append(
                     {"pair_id": pair.id, "folder": pair.folder, "role": role, "group_key": pair.group_key}
                 )
-        query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
+        target_id = pair.reference_image_id if pair.sample_role == "reference" else pair.query_image_id
+        query = db.get(ImageRecord, target_id) if target_id else None
         if pair.gt_x is None or pair.gt_y is None:
-            add(pair, "MISSING_GT", "Query GT를 지정하세요.", "warning" if pair.dataset_split == "test" else "error")
+            add(
+                pair,
+                "MISSING_GT",
+                "REF 기준 GT를 지정하세요." if pair.sample_role == "reference" else "Query GT를 지정하세요.",
+                "warning" if pair.dataset_split == "test" else "error",
+            )
         elif (
             query
             and query.width

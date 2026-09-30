@@ -165,7 +165,7 @@ def test_training_blocks_missing_roi_and_nonmanual_supervision(training_client, 
         snapshot["pairs"][0]["reference_annotation"] = None
     else:
         snapshot["pairs"][0]["gt_source"] = "legacy_cross"
-    with pytest.raises(ValueError, match="ROI|Query GT"):
+    with pytest.raises(ValueError, match="ROI|기준 GT"):
         prepare(
             SimpleNamespace(manifest=snapshot, id=version["id"], number=1, project_id=pid),
             TrainingConfig(folds=2).model_dump(),

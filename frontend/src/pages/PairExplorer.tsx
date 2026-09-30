@@ -205,8 +205,14 @@ export function PairExplorer({
                     </div>
                     <div className="pair-item-bottom">
                       <div className="table-thumbs">
-                        <Thumb image={p.reference} />
-                        <Thumb image={p.query} />
+                        {p.sample_role === "pair" && <Thumb image={p.reference} />}
+                        <Thumb
+                          image={
+                            p.sample_role === "reference"
+                              ? p.reference
+                              : p.query
+                          }
+                        />
                       </div>
                       <span>
                         {p.import_issues.length

@@ -44,6 +44,8 @@ export function PairEditor({
   previous?: () => void;
   next?: () => void;
 }) {
+  const isReference = pair.sample_role === "reference";
+  const targetImage = isReference ? pair.reference : pair.query;
   const [draft, setDraft] = useState<PairDraft>(draftOf(pair));
   const [refZoom, setRefZoom] = useState(1);
   const [queryZoom, setQueryZoom] = useState(1);
@@ -97,7 +99,7 @@ export function PairEditor({
             setCleaningImage(null);
             await refresh();
             notify(
-              "이미지 표시 제거 설정을 저장했습니다. 원본과 GT는 유지됩니다.",
+              "이미지 표시 제거 설정을 저장했습니다. 원본과 기존 GT는 유지되며, Train REF의 빈 GT는 십자선 중심으로 채웁니다.",
             );
           }}
         />
@@ -175,8 +177,12 @@ export function PairEditor({
       <div className="annotation-tip">
         <Crosshair size={16} />
         <span>
-          <strong>Query 이미지에서 정답 위치를 클릭하세요.</strong> 확대 후에도
-          원본 픽셀 좌표로 저장됩니다.
+          <strong>
+            {isReference
+              ? "Train REF의 기준 위치를 클릭하세요."
+              : "Query 이미지에서 정답 위치를 클릭하세요."}
+          </strong>{" "}
+          확대 후에도 원본 픽셀 좌표로 저장됩니다.
         </span>
         <label className="checkbox-label">
           <input
@@ -187,36 +193,48 @@ export function PairEditor({
           <i className="gt-legend" /> GT 표시
         </label>
       </div>
-      <div className="viewers">
-        <ImageViewer
+      <div className="viewers" style={pair.sample_role !== "pair" ? { gridTemplateColumns: "1fr" } : undefined}>
+        {pair.sample_role !== "query" && <ImageViewer
           image={pair.reference}
           title={pair.reference_shared ? "REF · 템플릿" : "REF"}
           emptyHint="REF 미연결 · Classes에서 템플릿 클래스에 붙이면 대표 REF가 연결됩니다."
           zoom={refZoom}
           setZoom={setRefZoom}
-          showGT={false}
+          showGT={isReference && showGT}
+          gt={isReference ? { x: draft.gt_x, y: draft.gt_y } : undefined}
+          onPick={
+            isReference
+              ? (x, y) => {
+                  if (!save.isPending)
+                    setDraft((d) => ({ ...d, gt_x: x, gt_y: y }));
+                }
+              : undefined
+          }
           onClean={
             !dirty && !save.isPending && pair.reference
               ? () => setCleaningImage(pair.reference)
               : undefined
           }
-        />
-        <ImageViewer
-          image={pair.query}
-          title="QUERY"
-          gt={{ x: draft.gt_x, y: draft.gt_y }}
-          onPick={(x, y) => {
-            if (!save.isPending) setDraft((d) => ({ ...d, gt_x: x, gt_y: y }));
-          }}
-          zoom={queryZoom}
-          setZoom={setQueryZoom}
-          showGT={showGT}
-          onClean={
-            !dirty && !save.isPending && pair.query
-              ? () => setCleaningImage(pair.query)
-              : undefined
-          }
-        />
+        />}
+        {!isReference && (
+          <ImageViewer
+            image={pair.query}
+            title="QUERY"
+            gt={{ x: draft.gt_x, y: draft.gt_y }}
+            onPick={(x, y) => {
+              if (!save.isPending)
+                setDraft((d) => ({ ...d, gt_x: x, gt_y: y }));
+            }}
+            zoom={queryZoom}
+            setZoom={setQueryZoom}
+            showGT={showGT}
+            onClean={
+              !dirty && !save.isPending && pair.query
+                ? () => setCleaningImage(pair.query)
+                : undefined
+            }
+          />
+        )}
       </div>
       <form
         id="pair-editor-form"
@@ -240,7 +258,7 @@ export function PairEditor({
                 aria-label="GT X"
                 type="number"
                 min="0"
-                max={pair.query?.width ? pair.query.width - 0.001 : undefined}
+                max={targetImage?.width ? targetImage.width - 0.001 : undefined}
                 step="any"
                 value={draft.gt_x ?? ""}
                 onChange={(e) =>
@@ -257,7 +275,9 @@ export function PairEditor({
                 aria-label="GT Y"
                 type="number"
                 min="0"
-                max={pair.query?.height ? pair.query.height - 0.001 : undefined}
+                max={
+                  targetImage?.height ? targetImage.height - 0.001 : undefined
+                }
                 step="any"
                 value={draft.gt_y ?? ""}
                 onChange={(e) =>

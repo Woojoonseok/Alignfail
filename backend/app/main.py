@@ -168,13 +168,32 @@ def create_app(state_dir: Path | None = None):
             for p in db.scalars(select(Pair).where(Pair.project_id == project_id).order_by(Pair.folder))
         ]
 
+    @app.post("/api/projects/{project_id}/normalize-upload-roles")
+    def normalize_upload_roles(project_id: str, db: Session = Depends(session)):
+        with write_lock:
+            project = get_project(db, project_id)
+            upload_root = (app.state.state_dir / "uploads" / project_id).resolve()
+            results = []
+            for source in project_directories(project):
+                root = Path(source).resolve()
+                if not root.is_relative_to(upload_root):
+                    continue
+                split = db.scalar(
+                    select(Pair.dataset_split).where(Pair.project_id == project_id, Pair.source_directory == source)
+                )
+                if split:
+                    results.append(import_directory(db, project, root, dataset_split=split))
+            db.commit()
+            return {"sources": len(results), "images": sum(r["images"] for r in results)}
+
     @app.put("/api/pairs/{pair_id}")
     def update_pair(pair_id: str, data: PairInput, db: Session = Depends(session)):
         with write_lock:
             pair = get_pair(db, pair_id)
             if data.revision != pair.revision:
                 raise HTTPException(409, "다른 작업에서 Pair가 변경되었습니다. 새로고침 후 다시 저장하세요.")
-            query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
+            target_id = pair.reference_image_id if pair.sample_role == "reference" else pair.query_image_id
+            query = db.get(ImageRecord, target_id) if target_id else None
             if data.gt_x is not None:
                 if not query or query.error or not query.width or not query.height:
                     raise HTTPException(422, "읽을 수 있는 Query 이미지가 필요합니다.")

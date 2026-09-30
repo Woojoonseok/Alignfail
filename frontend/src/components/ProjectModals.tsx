@@ -159,8 +159,8 @@ export function ImportModal({
           클래스에 포함합니다. 선택한 폴더 바로 안에 있는 이미지는 선택한 폴더
           이름을 클래스로 사용합니다.
           {datasetSplit === "train"
-            ? " Train 데이터는 학습과 Validation에 사용합니다."
-            : " Test 데이터는 평가용으로 따로 보관하며 학습과 Validation에 사용하지 않습니다."}
+            ? " Train의 모든 파일은 REF 학습 이미지입니다. 파일명에 REF가 없어도 REF로 등록합니다."
+            : " Test의 모든 파일은 위치·클래스를 찾을 Query 이미지입니다. 학습에는 사용하지 않습니다."}
         </p>
         {mode === "upload" ? (
           <>

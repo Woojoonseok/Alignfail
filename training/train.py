@@ -71,26 +71,41 @@ def batches(rows, config, seed, device):
             row = rows[index]
             ref = read_image(row["ref_path"], row["ref_hash"])
             query = read_image(row["query_path"], row["query_hash"])
+            positive_center = row["query_gt"]
+            if row.get("sample_role") == "reference":
+                candidates = [r for r in rows if r["class_label"] == row["class_label"]]
+                positive_row = candidates[int(rng.integers(len(candidates)))]
+                query = read_image(positive_row["ref_path"], positive_row["ref_hash"])
+                positive_center = positive_row["ref_center"]
             native, size = crop_spec(row["ref_box"], config["crop_mode"], config)
-            negative = negative_center(query, row["query_gt"], config["negative_min_distance"], rng)
+            negative = negative_center(query, positive_center, config["negative_min_distance"], rng)
             for target, image, center in zip(
-                samples, [ref, query, query], [row["ref_center"], row["query_gt"], negative], strict=True
+                samples, [ref, query, query], [row["ref_center"], positive_center, negative], strict=True
             ):
-                target.append(crop(image, center, native, size)[0])
+                patch = crop(image, center, native, size)[0]
+                if row.get("sample_role") == "reference":
+                    patch = np.clip(patch.astype(np.float32) * rng.uniform(0.8, 1.2) + rng.uniform(-12, 12), 0, 255)
+                target.append(patch)
         yield [torch.from_numpy(np.stack(items)[:, None]).float().div(255).to(device) for items in samples]
 
 
-def evaluate(model, rows, config, directory, managed, export=False):
+def evaluate(model, rows, config, directory, managed, export=False, training_rows=None):
     model.eval()
     results = []
     if export:
         (directory / "heatmaps").mkdir(exist_ok=True)
     for row in rows:
         check_stop(directory, managed)
-        ref = read_image(row["ref_path"], row["ref_hash"])
+        template = row
+        if row.get("sample_role") == "reference":
+            candidates = [r for r in (training_rows or []) if r["class_label"] == row["class_label"]]
+            if not candidates:
+                raise ValueError("Validation REF class has no training reference")
+            template = sorted(candidates, key=lambda r: r["pair_id"])[0]
+        ref = read_image(template["ref_path"], template["ref_hash"])
         query = read_image(row["query_path"], row["query_hash"])
-        native, size = crop_spec(row["ref_box"], config["crop_mode"], config)
-        patch, _ = crop(ref, row["ref_center"], native, size)
+        native, size = crop_spec(template["ref_box"], config["crop_mode"], config)
+        patch, _ = crop(ref, template["ref_center"], native, size)
         start = time.perf_counter()
         pred, score, heat = model.predict(patch, query, native, size, config["device"])
         if not np.isfinite(score):
@@ -194,7 +209,7 @@ def run(directory, managed=False):
                     check_stop(directory, managed)
                     val_loss += model.training_loss(a, p, n, config["margin"]).item() * len(a)
                     val_seen += len(a)
-            _, scores = evaluate(model, val, config, directory, managed)
+            _, scores = evaluate(model, val, config, directory, managed, training_rows=train)
             current = {
                 "epoch": epoch,
                 "train_loss": loss_sum / seen,
@@ -212,7 +227,7 @@ def run(directory, managed=False):
         model.load_state_dict(
             torch.load(directory / "best.pt", map_location=config["device"], weights_only=True)["model"]
         )
-        predictions, scores = evaluate(model, val, config, directory, managed, export=True)
+        predictions, scores = evaluate(model, val, config, directory, managed, export=True, training_rows=train)
         write_json(directory / "predictions.json", predictions)
         write_json(directory / "metrics.json", scores)
         write_json(directory / "result.json", {"status": "completed"})

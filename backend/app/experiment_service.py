@@ -40,19 +40,38 @@ def prepare(version, config, directory):
             continue
         if wanted != "all" and pair.get("modality", "") != wanted:
             continue  # one model per modality: other modalities stay out of this experiment
+        reference_sample = pair.get("sample_role") == "reference"
         annotation = pair.get("reference_annotation")
+        if reference_sample:
+            if not pair.get("class_label", "").strip():
+                raise ValueError(f"{pair['folder']}: Train REF 클래스가 필요합니다.")
+            if config["crop_mode"] == "adaptive" and not annotation:
+                raise ValueError(
+                    f"{pair['folder']}: Adaptive crop에는 REF ROI가 필요합니다. 기준 GT만 있으면 fixed crop을 사용하세요."
+                )
+            if not annotation and pair["gt_x"] is not None and pair["gt_y"] is not None:
+                # Only fixed crops use this center-derived footprint; it is not a measured ROI.
+                x, y = pair["gt_x"], pair["gt_y"]
+                size = int(config["crop_mode"].split("_")[1])
+                annotation = dict(
+                    image_hash=pair["reference"]["file_hash"],
+                    center=[x, y],
+                    box=[x - size / 2, y - size / 2, x + size / 2, y + size / 2],
+                    source="reference_gt_fixed_crop",
+                )
         if pair["import_issues"] or pair["gt_source"] != "manual" or pair["gt_x"] is None or pair["gt_y"] is None:
-            raise ValueError(f"{pair['folder']}: 파일 오류 없는 Pair와 수동(또는 확인된) Query GT가 필요합니다.")
+            raise ValueError(f"{pair['folder']}: 파일 오류 없는 항목과 확인된 기준 GT가 필요합니다.")
         if not pair.get("reference"):
             raise ValueError(f"{pair['folder']}: REF 미연결 Pair입니다. 클래스 템플릿을 붙이거나 제외하세요.")
         if not annotation or annotation["image_hash"] != pair["reference"]["file_hash"]:
             raise ValueError(f"{pair['folder']}: 유효한 REF ROI가 포함된 새 Dataset Version을 생성하세요.")
         row = {
             "pair_id": pair["id"],
+            "sample_role": pair.get("sample_role", "pair"),
             "folder": pair["folder"],
             "group_key": pair["group_key"],
             "ref_box": annotation["box"],
-            "ref_center": annotation["center"],
+            "ref_center": [pair["gt_x"], pair["gt_y"]] if reference_sample else annotation["center"],
             "reference_annotation": annotation,
             "query_gt": [pair["gt_x"], pair["gt_y"]],
             "pattern_type": pair.get("pattern_type", "unknown"),
@@ -63,7 +82,7 @@ def prepare(version, config, directory):
             "dataset_split": "train",
         }
         for role, field in [("ref", "reference"), ("query", "query")]:
-            record = pair[field]
+            record = pair["reference"] if reference_sample else pair[field]
             if not record:
                 raise ValueError(f"{pair['folder']}: {role} 이미지 없음")
             # Validate original even when using Clean, then snapshot the selected input bytes.
@@ -128,6 +147,14 @@ def prepare(version, config, directory):
     if not rows:
         raise ValueError(f"선택한 모달리티({wanted})의 활성 Train Pair가 이 버전에 없습니다.")
     split = group_split(rows, config)
+    training_classes = {r["class_label"] for r in rows if r["pair_id"] in split["train"]}
+    missing = {
+        r["class_label"] for r in rows if r["sample_role"] == "reference" and r["pair_id"] in split["validation"]
+    } - training_classes
+    if missing:
+        raise ValueError(
+            f"Validation REF 클래스가 Train fold에 없습니다: {sorted(missing)}. 같은 클래스의 촬영 그룹을 여러 fold에 배치하세요."
+        )
     manifest = {
         "schema": "alignfail.training.v1",
         "dataset_version_id": version.id,

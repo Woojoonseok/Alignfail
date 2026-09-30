@@ -278,7 +278,8 @@ def register_class_routes(app, factory, write_lock):
                     except (OSError, ValueError, Image.DecompressionBombError) as exc:
                         outcome["roi"] = f"error: {exc}"
                 if data.gt:
-                    query = db.get(ImageRecord, pair.query_image_id) if pair.query_image_id else None
+                    target_id = pair.reference_image_id if pair.sample_role == "reference" else pair.query_image_id
+                    query = db.get(ImageRecord, target_id) if target_id else None
                     try:
                         if pair.gt_source == "manual" and not data.replace_existing:
                             outcome["gt"] = "kept"

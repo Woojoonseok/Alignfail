@@ -102,7 +102,7 @@ export function ImageViewer({
             {loaded && image.width && image.height && (
               <svg
                 aria-label={
-                  onPick ? "Query GT 지정 영역" : "Reference 이미지 영역"
+                  onPick ? `${title} GT 지정 영역` : `${title} 이미지 영역`
                 }
                 className={onPick ? "image-overlay editable" : "image-overlay"}
                 viewBox={`0 0 ${image.width} ${image.height}`}

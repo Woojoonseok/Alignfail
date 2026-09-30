@@ -47,6 +47,8 @@ Windows 브라우저에서 **http://localhost:8000** 에 접속합니다. 기본
 
 **하위 폴더별 클래스:** `데이터/결함A/이미지.png`, `데이터/결함B/이미지.png` 구조에서 `데이터`를 선택하면 `결함A`, `결함B`를 각각 클래스로 등록합니다. 클래스 폴더 안의 하위 폴더도 같은 클래스입니다. 선택한 폴더 바로 안의 이미지는 선택한 폴더 이름을 클래스로 사용합니다. 같은 이름의 Train/Test 클래스는 데이터 용도를 따로 저장합니다.
 
+**Train=REF / Test=Query:** Train 업로드는 파일명과 무관하게 모든 파일을 개별 REF로, Test 업로드는 모든 파일을 개별 Query로 등록합니다. 하위 클래스 이름은 그대로 사용합니다. Train REF의 십자선 제거 저장 시 중심 좌표를 빈 GT에 자동 저장하며 기존 수동 GT는 보존합니다. 자동 GT는 확인 후 학습에 사용합니다. 이전 업로드는 Project Settings의 **기존 업로드를 Train=REF · Test=Query로 정리**에서 변환할 수 있고 기존 Clean의 십자선 좌표로 빠진 GT도 복구합니다. 원본·Clean 파일과 기존 GT 이력은 유지합니다.
+
 **Train / Test 분리:** Train과 Test 업로드 버튼이 별도입니다. Pair Explorer와 Classes에서 용도를 필터링할 수 있습니다. Test 데이터는 학습·Validation·crop 진단에 들어가지 않습니다. Train 데이터 안에서 기존 Group Fold로 학습/Validation을 나눕니다. 버전과 GT 내보내기에는 `dataset_split`이 저장되며, 기존 데이터와 구버전 manifest는 Train으로 취급합니다. 버전 생성은 Train 파일·GT 검사를 기준으로 하므로 GT 없는 Test를 추가해도 Train 버전을 만들 수 있습니다. Test 원본/선택 Clean 이미지가 Train 입력과 겹치면 학습 준비를 막습니다(Train 클래스 템플릿에서 연결한 공유 REF 제외). **독립 Test 추론·평가 실행 화면은 아직 제공하지 않습니다.**
 
 기존에 지정한 클래스와 GT는 유지합니다. 서버 폴더 재검색은 기존 Train/Test 구분을 유지하며 새로 발견한 이미지도 같은 용도로 등록합니다.
