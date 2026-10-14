@@ -207,6 +207,9 @@ def _image_source(db, app, project, image):
 def build_manifest(db, app, project):
     """Snapshot verified file paths/GT. Only reviewed Train GT contributes to bank."""
     templates, tests, incoming = [], [], []
+    ledger_file = _state(app, project.id) / "publish_ledger.json"
+    published = {entry["pair_id"]: entry for entry in
+                 (json.loads(ledger_file.read_text(encoding="utf-8")) if ledger_file.is_file() else [])}
     for pair in db.scalars(select(Pair).where(Pair.project_id == project.id, Pair.enabled.is_(True))):
         reference = db.get(ImageRecord, pair.reference_image_id) if pair.reference_image_id else None
         source = _image_source(db, app, project, reference)
@@ -227,12 +230,16 @@ def build_manifest(db, app, project):
             entry.update(query=q, reference_roi=annotation.box if annotation else None)
             tests.append(entry)
         elif pair.dataset_split == "train":
-            if pair.class_label and pair.gt_source == "manual" and entry["gt"] and (
+            is_incoming = pair.folder.startswith("AI:incoming:")
+            published_entry = published.get(pair.id)
+            is_published = bool(published_entry and published_entry["class_label"] == pair.class_label
+                                and published_entry["sha256"] == source["sha256"])
+            if is_incoming and not is_published:
+                incoming.append(entry)
+            elif pair.class_label and pair.gt_source == "manual" and entry["gt"] and (
                 source["clean"] or source.get("cross_present") is False
             ):
                 templates.append(entry)
-            elif pair.folder.startswith("AI:incoming:"):
-                incoming.append(entry)
     hashes = {hash_value for x in templates for hash_value in
               (x["reference"]["sha256"], x["reference"]["raw_sha256"])}
     if any(any(hash_value in hashes for source in (t["reference"], t["query"])
