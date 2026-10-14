@@ -272,7 +272,7 @@ export function AIWorkspace({
                   alt="Reference" /><span>ROI: {selectedPair.reference_annotation?.box.join(", ") ?? "미지정"}</span></div>}
               <div>
                 <strong>{selectedPair.dataset_split === "test" ? "Fail Query" : "신규 이미지"}</strong>
-                <Annotate key={selectedPair.id} pair={selectedPair} image={chosenImage}
+                <Annotate key={selectedPair.id} pair={selectedPair} image={chosenImage ?? null}
                   prediction={currentProposal?.localization} refresh={refresh} notify={notify}/>
               </div>
             </div>
