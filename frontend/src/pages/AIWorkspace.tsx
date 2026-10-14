@@ -75,6 +75,19 @@ function Annotate({
     border: "2px solid " + color, background: "#101418",
     pointerEvents: "none", boxShadow: "0 0 0 1px #fff",
   });
+  const publish = async () => {
+    if (!pair.class_label.trim() || pair.gt_source !== "manual") return;
+    setSaving(true); setError("");
+    try {
+      const result = await api<{ file_path: string }>(
+        `/projects/${pair.project_id}/ai/publish`, "POST", {
+          pair_id: pair.id, revision: pair.revision, class_label: pair.class_label,
+        });
+      notify(`클래스 폴더에 저장했습니다: ${result.file_path}`);
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  };
   const save = async (confirm = false) => {
     if (!point && !newClass.trim()) return;
     setSaving(true);
@@ -118,6 +131,10 @@ function Annotate({
       <button className="button secondary" disabled={saving || !point} onClick={() => save(false)}>GT 저장</button>
       {pair.gt_source === "auto_cross" && !draft &&
         <button className="button primary" disabled={saving} onClick={() => save(true)}>자동 GT 확인</button>}
+      {pair.folder.startsWith("AI:incoming:") &&
+        <button className="button primary" disabled={saving || pair.gt_source !== "manual" ||
+          !pair.class_label.trim() || newClass.trim() !== pair.class_label || !!draft}
+          onClick={publish}>검토 완료 → 클래스 폴더 저장</button>}
     </div>
     <ErrorBox error={error} />
   </div>;
