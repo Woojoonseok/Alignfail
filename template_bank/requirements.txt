@@ -1,0 +1,6 @@
+# Install CUDA-enabled PyTorch for your system first.
+# Use a dedicated venv; don't alter Dataset Studio's backend dependencies.
+numpy>=1.26,<3
+Pillow>=10,<13
+sentence-transformers[image]>=5.4,<7
+transformers>=4.57,<6
