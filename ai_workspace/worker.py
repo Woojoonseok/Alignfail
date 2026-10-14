@@ -90,8 +90,10 @@ def run(job_dir):
     # Exact per-template clean image, reviewed GT and class label are mandatory.
     for row in manifest["templates"]:
         gray = checked_image(row["reference"])
-        if row["gt_source"] != "manual" or not row["reference"]["clean"]:
-            raise ValueError("Only reviewed GT + validated Clean training images are eligible")
+        if row["gt_source"] != "manual" or not (
+            row["reference"]["clean"] or row["reference"].get("cross_present") is False
+        ):
+            raise ValueError("Only reviewed GT with Clean or verified marker-free training images are eligible")
         patch, offset = target_patch(gray, *row["gt"], patch_size)
         path = crops / f"template_{len(bank_rows)}.png"
         Image.fromarray(patch).save(path)
