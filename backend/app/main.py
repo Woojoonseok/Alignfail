@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
+from .ai_workspace_api import register_ai_workspace_routes
 from .classes_api import register_class_routes
 from .cleanup_api import register_cleanup_routes
 from .database import create_database, session_dependency
@@ -51,6 +52,7 @@ def create_app(state_dir: Path | None = None):
     register_training_routes(app, factory, write_lock)
     register_class_routes(app, factory, write_lock)
     register_upload_routes(app, factory, write_lock)
+    register_ai_workspace_routes(app, factory, write_lock)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_input(_request, exc):

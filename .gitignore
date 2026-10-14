@@ -23,3 +23,7 @@ model-weights/
 *.onnx
 template_bank/local/
 template_bank/output/
+
+# Dedicated CUDA VLM environment and experiment workspaces
+.vlm-venv/
+.ai-workspace-local/

@@ -4,6 +4,10 @@
 
 **학습 설치·사용법:** [TRAINING.md](TRAINING.md). 코드 구조·설계 원칙·미완 항목은 [PROJECT_NOTES.md](PROJECT_NOTES.md), 모델 구조와 다음 단계는 [MODEL.md](MODEL.md). 데이터 검수만 사용할 때는 PyTorch가 필요하지 않습니다.
 
+## AI Workspace — Template GT / REF–FAIL / VLM Localization (신규)
+
+기존 Dataset Studio 사이드바에 **AI Workspace**를 추가했습니다. 클래스별 Template의 십자선 GT를 검수하고, REF–FAIL Test Pair를 독립 등록하며, RTX 4090에서 Qwen3-VL Embedding으로 Top-K Template을 검색합니다. 별도 NCC Localization 후보와 신규 이미지의 클래스 폴더 게시 기능도 포함합니다. 현재 Localization은 검증용 기준선이며 실제 SEM 데이터 정확도는 검증 전입니다. **설치, GT 검수, 데이터 유출 방지 절차:** [AI_WORKSPACE.md](AI_WORKSPACE.md).
+
 ## 신규: VLM Template Bank (실험용 CLI)
 
 RTX 4090에서 Qwen3-VL-Embedding-2B를 이용해 **사람이 분류한 템플릿 클래스 ↔ 보류 중인 Test REF**를 Top-K 매칭하고, 새 공정 완료 이미지를 **기존 클래스 후보 / 신규 패턴 후보**로 별도 보관하는 초기 구현을 추가했습니다. 자세한 설치 방법·CSV 포맷·Test 누수 방지 규칙은 [template_bank/README.md](template_bank/README.md)를 참고하세요. 독립 Test의 실제 Align Key 추론 실행과 Dataset Studio UI 통합은 아직 미구현입니다.
