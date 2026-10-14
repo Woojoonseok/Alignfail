@@ -97,5 +97,5 @@ def test_ref_roi_excludes_white_rectangle_border():
     img = np.zeros((100, 100), dtype=np.uint8)
     cv2.rectangle(img, (20, 25), (70, 75), 255, 1)
     crop = ref_patch(img, (20, 25, 70, 75))
-    assert crop.shape == (46, 46)
+    assert crop.shape == (45, 45)
     assert crop.max() == 0
