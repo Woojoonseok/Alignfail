@@ -44,6 +44,7 @@ import { Workflow } from "./pages/Workflow";
 import { DeleteProjectModal } from "./components/DeleteProjectModal";
 import { Settings } from "./pages/Settings";
 import TrainingPage from "./TrainingPage";
+import { AIWorkspace } from "./pages/AIWorkspace";
 
 const PAGES: Record<string, { title: string; description: string }> = {
   "/": {
@@ -75,6 +76,10 @@ const PAGES: Record<string, { title: string; description: string }> = {
     title: "Model",
     description:
       "Encoder 구조와 학습·추론 흐름, 학습된 체크포인트가 보는 것을 확인하세요.",
+  },
+  "/ai": {
+    title: "AI Workspace",
+    description: "Template GT, REF–FAIL Test 및 신규 이미지의 VLM 검색과 위치 후보를 검토합니다.",
   },
   "/workflow": {
     title: "Workflow",
@@ -193,6 +198,9 @@ export default function App() {
             <Files size={18} /> Versions
           </NavLink>
           <div className="nav-caption">DEVELOPMENT</div>
+          <NavLink to="/ai">
+            <Crosshair size={18} /> AI Workspace
+          </NavLink>
           <NavLink to="/training">
             <Activity size={18} /> Training
           </NavLink>
@@ -330,6 +338,11 @@ export default function App() {
             </div>
           ) : (
             <Routes>
+              <Route
+                path="/ai"
+                element={<AIWorkspace key={project.id} project={project} pairs={pairsQuery.data ?? []}
+                  refresh={refresh} notify={setToast} />}
+              />
               <Route
                 path="/training"
                 element={
