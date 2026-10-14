@@ -10,3 +10,16 @@ sample-data/
 artifacts/
 *.tsbuildinfo
 .training-venv/
+
+# Local factory imagery / model weights / generated VLM outputs
+local-data/
+private-data/
+datasets/
+model-weights/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+template_bank/local/
+template_bank/output/
