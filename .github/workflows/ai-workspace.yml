@@ -1,0 +1,38 @@
+name: AI Workspace checks
+on:
+  push:
+    branches: [codex/localization-workbench-v1]
+  pull_request:
+    paths:
+      - 'ai_workspace/**'
+      - 'backend/app/ai_workspace_api.py'
+      - 'backend/tests/test_ai_workspace.py'
+      - 'template_bank/**'
+      - 'frontend/src/pages/AIWorkspace.tsx'
+      - 'frontend/src/App.tsx'
+      - 'frontend/src/ai-workspace.css'
+      - '.github/workflows/ai-workspace.yml'
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Dataset Studio dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Run workbench and previous template-bank tests (CPU only)
+        run: python -m pytest -q backend/tests/test_ai_workspace.py backend/tests/test_template_bank.py
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend run build
