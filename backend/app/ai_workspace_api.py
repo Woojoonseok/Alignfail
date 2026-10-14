@@ -81,6 +81,7 @@ def import_workbench_directory(db, project, root: Path, *, mode: str):
         select(ImageRecord).where(ImageRecord.project_id == project.id))}
     existing_pairs = {p.folder: p for p in db.scalars(
         select(Pair).where(Pair.project_id == project.id))}
+    prefix = f"AI:{mode}:{root.as_posix()}:"
     candidates = []
     if mode == "test":
         for case in sorted(root.iterdir()):
@@ -110,9 +111,9 @@ def import_workbench_directory(db, project, root: Path, *, mode: str):
         for p in (first, second):
             if p is None:
                 continue
-            if str(p.resolve()) in existing_paths and (not (key in existing_pairs and
-                (existing_pairs[key].reference_image_id == existing_paths[str(p.resolve())].id or
-                 existing_pairs[key].query_image_id == existing_paths[str(p.resolve())].id))):
+            if str(p.resolve()) in existing_paths and (not (prefix + key in existing_pairs and
+                (existing_pairs[prefix + key].reference_image_id == existing_paths[str(p.resolve())].id or
+                 existing_pairs[prefix + key].query_image_id == existing_paths[str(p.resolve())].id))):
                 raise ValueError(f"다른 Pair에 등록된 이미지입니다: {p.name}")
         info_a = inspect_image(first)
         info_b = inspect_image(second) if second else None
@@ -120,7 +121,6 @@ def import_workbench_directory(db, project, root: Path, *, mode: str):
             raise ValueError(f"{key}: 파일을 읽을 수 없습니다.")
         records.append((key, first, second, info_a, info_b))
     count = 0
-    prefix = f"AI:{mode}:{root.as_posix()}:"
     for key, first, second, ia, ib in records:
         pair_key = prefix + key
         # Previous prototype versions may already contain this name.
@@ -183,8 +183,8 @@ def _image_source(db, app, project, image):
     if cleanup is not None and cleanup.source_hash == image.file_hash:
         path = Path(cleanup.clean_path)
         if inside(path, app.state.state_dir / "clean") and path.is_file() and digest(path) == cleanup.clean_hash:
-            return {"path": str(path), "sha256": cleanup.clean_hash, "clean": True}
-    return {"path": str(origin), "sha256": image.file_hash, "clean": False}
+            return {"path": str(path), "sha256": cleanup.clean_hash, "raw_sha256": image.file_hash, "clean": True}
+    return {"path": str(origin), "sha256": image.file_hash, "raw_sha256": image.file_hash, "clean": False}
 
 
 def build_manifest(db, app, project):
@@ -214,8 +214,10 @@ def build_manifest(db, app, project):
                 templates.append(entry)
             elif pair.folder.startswith("AI:incoming:"):
                 incoming.append(entry)
-    hashes = {x["reference"]["sha256"] for x in templates}
-    if any(t["reference"]["sha256"] in hashes or t["query"]["sha256"] in hashes for t in tests):
+    hashes = {hash_value for x in templates for hash_value in
+              (x["reference"]["sha256"], x["reference"]["raw_sha256"])}
+    if any(any(hash_value in hashes for source in (t["reference"], t["query"])
+               for hash_value in (source["sha256"], source["raw_sha256"])) for t in tests):
         raise ValueError("Train/Test 원본 또는 Clean SHA256 중복이 있습니다.")
     if not templates:
         raise ValueError("Train 클래스에서 검수한 GT와 Clean 이미지가 있는 템플릿이 없습니다.")
@@ -257,10 +259,12 @@ def register_ai_workspace_routes(app, factory, write_lock):
         return {"train": sum(x.dataset_split == "train" for x in pairs),
                 "test_pairs": sum(x.dataset_split == "test" and x.query_image_id is not None for x in pairs),
                 "templates_ready": sum(x.dataset_split == "train" and x.gt_source == "manual"
-                                       and bool(x.class_label) for x in pairs),
+                                       and bool(x.class_label) and x.reference_image_id is not None
+                                       and active_cleanup(db, x.reference_image_id) is not None for x in pairs),
                 "incoming": sum(x.folder.startswith("AI:incoming:") for x in pairs),
                 "pairs": [pair_dict(db, x) for x in pairs if
-                          x.folder.startswith("AI:")],
+                          x.folder.startswith("AI:") or
+                          (x.dataset_split == "train" and x.sample_role == "reference")],
                 "active_job": _read_status(_state(app, project_id) / "latest")}
 
     @app.post("/api/projects/{project_id}/ai/run")
