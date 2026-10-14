@@ -62,7 +62,10 @@ class QwenEncoder:
         if device.startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError("CUDA not available: select --device cpu or install CUDA PyTorch")
         self.model_id = model
-        self.model = SentenceTransformer(model, device=device)
+        # BF16 keeps a 2B VLM practical on the 24GB RTX 4090.
+        # Do not force BF16 on CPU-only development machines.
+        kwargs = {"model_kwargs": {"torch_dtype": torch.bfloat16}} if device.startswith("cuda") else {}
+        self.model = SentenceTransformer(model, device=device, **kwargs)
 
     def encode(self, paths: list[Path], rois: list[tuple[int, int, int, int] | None] | None = None,
                batch_size: int = 2) -> np.ndarray:
