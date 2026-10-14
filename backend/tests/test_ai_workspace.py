@@ -99,3 +99,53 @@ def test_ref_roi_excludes_white_rectangle_border():
     crop = ref_patch(img, (20, 25, 70, 75))
     assert crop.shape == (45, 45)
     assert crop.max() == 0
+
+
+def test_manual_gt_publishes_incoming_into_class_folder_without_moving_original(tmp_path):
+    folder = tmp_path / "incoming"
+    original = folder / "unmarked.png"
+    save_image(original, 99)
+    original_bytes = original.read_bytes()
+    app = create_app(tmp_path / "state")
+    with TestClient(app) as client:
+        project = client.post("/api/projects", json={"name": "Publish workflow"}).json()
+        pid = project["id"]
+        assert client.post(f"/api/projects/{pid}/ai/import/incoming",
+                           json={"root_directory": str(folder)}).status_code == 200
+        pair = client.get(f"/api/projects/{pid}/pairs").json()[0]
+        updated = client.put(f"/api/pairs/{pair['id']}", json={
+            "revision": pair["revision"], "gt_x": 45.0, "gt_y": 60.0, "class_label": "Class_A",
+        })
+        assert updated.status_code == 200, updated.text
+        current = updated.json()
+        assert current["gt_source"] == "manual"
+        req = {"pair_id": pair["id"], "revision": current["revision"],
+               "class_label": "Class_A"}
+        published = client.post(f"/api/projects/{pid}/ai/publish", json=req)
+        assert published.status_code == 200, published.text
+        item = published.json()
+        destination = Path(item["file_path"])
+        assert destination.is_file() and destination.parent.name == "Class_A"
+        assert original.read_bytes() == original_bytes
+        assert destination.read_bytes() == original_bytes
+        ledger = tmp_path / "state" / "ai_workspace" / pid / "publish_ledger.json"
+        assert ledger.exists()
+        assert client.post(f"/api/projects/{pid}/ai/publish", json=req).status_code == 409
+    app.state.engine.dispose()
+
+
+def test_test_pair_cannot_be_published_as_train(tmp_path):
+    case = tmp_path / "heldout" / "case_1"
+    save_image(case / "a_REF.png", 7)
+    save_image(case / "a_FAIL.png", 8)
+    app = create_app(tmp_path / "state")
+    with TestClient(app) as client:
+        pid = client.post("/api/projects", json={"name": "Held-out"}).json()["id"]
+        client.post(f"/api/projects/{pid}/ai/import/test",
+                    json={"root_directory": str(case.parent)})
+        pair = client.get(f"/api/projects/{pid}/pairs").json()[0]
+        response = client.post(f"/api/projects/{pid}/ai/publish", json={
+            "pair_id": pair["id"], "revision": pair["revision"], "class_label": "Class_A"})
+        assert response.status_code == 422
+        assert not (tmp_path / "state" / "ai_workspace" / pid / "curated").exists()
+    app.state.engine.dispose()
